@@ -1,0 +1,5 @@
+anthropic==0.69.0
+python-dotenv==1.0.1
+networkx==3.4.2
+langgraph==0.2.60
+pytest==8.3.4

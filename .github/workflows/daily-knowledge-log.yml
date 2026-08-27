@@ -1,0 +1,54 @@
+name: Daily Knowledge Log
+
+# Runs entirely on GitHub's infrastructure (no laptop required).
+# Times below are UTC; each maps to a spread-out point in the IST day (UTC+5:30):
+#   01:42 UTC -> 07:12 IST
+#   05:17 UTC -> 10:47 IST
+#   08:03 UTC -> 13:33 IST
+#   11:49 UTC -> 17:19 IST
+#   15:35 UTC -> 21:05 IST
+on:
+  schedule:
+    - cron: "42 1 * * *"
+    - cron: "17 5 * * *"
+    - cron: "3 8 * * *"
+    - cron: "49 11 * * *"
+    - cron: "35 15 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-knowledge-log
+  cancel-in-progress: false
+
+jobs:
+  log-entry:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch entry and update log
+        run: python scripts/knowledge_log.py
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add KNOWLEDGE_LOG.md
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "chore: daily knowledge log entry ($(date -u +'%Y-%m-%d %H:%M UTC'))"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

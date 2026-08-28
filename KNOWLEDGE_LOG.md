@@ -18,3 +18,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-28
 
 **Fact of the day:** The Hawaiian alphabet has only 12 letters.
+
+## 2026-08-28
+
+**Fact of the day:** Illinois has the highest number of personalized license plates than any other state.

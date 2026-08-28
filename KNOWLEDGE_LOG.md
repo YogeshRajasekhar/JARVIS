@@ -10,3 +10,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-28
 
 **Advice of the day:** The more ideas that you give away, the more ideas that will come to you.
+
+## 2026-08-28
+
+**Advice of the day:** If you cannot unscrew the lid of a jar, try placing a rubber band around its circumference for extra grip.

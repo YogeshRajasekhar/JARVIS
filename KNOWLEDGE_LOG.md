@@ -22,3 +22,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-28
 
 **Fact of the day:** Illinois has the highest number of personalized license plates than any other state.
+
+## 2026-08-29
+
+**Fact of the day:** Sugar was first added to chewing gum in 1869 by a dentist, William Semple.

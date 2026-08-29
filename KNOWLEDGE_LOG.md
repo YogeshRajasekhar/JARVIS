@@ -30,3 +30,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-29
 
 **Fact of the day:** Walt Disney holds the world record for the most Academy Awards won by one person, he has won twenty statuettes, and twelve other plaques and certificates
+
+## 2026-08-29
+
+**Fact of the day:** Since 1978, 37 people have died by Vending Machine`s falling on them.  13 people are killed annually.  All this while trying to shake merchandise out of them. 113 people have been injured.

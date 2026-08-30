@@ -54,3 +54,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-30
 
 **Advice of the day:** Life is short enough, don't race to the finish.
+
+## 2026-08-30
+
+**Advice of the day:** Gratitude is said to be the secret to happiness.

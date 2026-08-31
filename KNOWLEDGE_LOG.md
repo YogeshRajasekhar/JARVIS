@@ -78,3 +78,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-31
 
 **Fact of the day:** The glue on Israeli postage is certified kosher.
+
+## 2026-08-31
+
+**Fact of the day:** Giraffes and rats can last longer without water than camels.

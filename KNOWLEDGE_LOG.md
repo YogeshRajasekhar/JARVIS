@@ -82,3 +82,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-31
 
 **Fact of the day:** Giraffes and rats can last longer without water than camels.
+
+## 2026-08-31
+
+**Fact of the day:** 0.3% of all road accidents in Canada involve a Moose.

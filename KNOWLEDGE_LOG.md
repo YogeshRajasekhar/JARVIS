@@ -74,3 +74,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-31
 
 **Advice of the day:** Life is better when you sing about bananas.
+
+## 2026-08-31
+
+**Fact of the day:** The glue on Israeli postage is certified kosher.

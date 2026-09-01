@@ -98,3 +98,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-01
 
 **Fact of the day:** No matter where you stand in Michigan, you are never more than 85 miles from a Great Lake.
+
+## 2026-09-01
+
+**Fact of the day:** Ninety percent of all species that have become extinct have been birds.

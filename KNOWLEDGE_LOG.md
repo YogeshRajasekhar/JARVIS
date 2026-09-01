@@ -102,3 +102,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-01
 
 **Fact of the day:** Ninety percent of all species that have become extinct have been birds.
+
+## 2026-09-01
+
+**Advice of the day:** If you're feeling tired or anxious, a pint of water will almost always make you feel better.

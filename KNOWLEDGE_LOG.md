@@ -86,3 +86,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-08-31
 
 **Fact of the day:** 0.3% of all road accidents in Canada involve a Moose.
+
+## 2026-09-01
+
+**Fact of the day:** It was discovered on a space mission that a frog can throw up. The frog throws up its stomach first, so the stomach is dangling out of its mouth. Then the frog uses its forearms to dig out all of the stomach`s contents and then swallows the stomach back down.

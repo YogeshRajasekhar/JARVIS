@@ -118,3 +118,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-02
 
 **Advice of the day:** Don't waste food.
+
+## 2026-09-02
+
+**Fact of the day:** All polar bears are left-handed.

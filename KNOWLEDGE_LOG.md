@@ -134,3 +134,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-03
 
 **Advice of the day:** Don't ever name files or folders using the word "Final".
+
+## 2026-09-03
+
+**Advice of the day:** Try to not compliment people on things they don't control.

@@ -126,3 +126,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-02
 
 **Fact of the day:** A literal translation of a standard traffic sign in China: "Give large space to the festive dog that makes sport in the roadway."
+
+## 2026-09-03
+
+**Advice of the day:** Don't take it personally.

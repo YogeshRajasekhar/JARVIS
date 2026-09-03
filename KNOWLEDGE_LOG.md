@@ -138,3 +138,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-03
 
 **Advice of the day:** Try to not compliment people on things they don't control.
+
+## 2026-09-03
+
+**Advice of the day:** When hugging, hug with both arms and apply reasonable, affectionate pressure.

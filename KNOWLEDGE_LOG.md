@@ -162,3 +162,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-04
 
 **Advice of the day:** Accentuate the positive, eliminate the negative.
+
+## 2026-09-04
+
+**Fact of the day:** Only 6 people in the whole world have died from moshing.

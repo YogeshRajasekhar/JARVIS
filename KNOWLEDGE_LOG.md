@@ -154,3 +154,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-04
 
 **Fact of the day:** Al Capone’s business card said he was a used furniture dealer.
+
+## 2026-09-04
+
+**Fact of the day:** In the Philippine jungle, the yo-yo was first used as a weapon.

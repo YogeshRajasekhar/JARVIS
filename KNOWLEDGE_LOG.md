@@ -182,3 +182,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-05
 
 **Fact of the day:** Blondes have more hair than dark-haired people do.
+
+## 2026-09-05
+
+**Fact of the day:** Between 2 and 3 jockeys are killed each year in horse racing.

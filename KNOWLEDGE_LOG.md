@@ -226,3 +226,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-07
 
 **Advice of the day:** If you don't like the opinion you've been given, get another one.
+
+## 2026-09-08
+
+**Fact of the day:** The only real person to be a PEZ head was Betsy Ross.

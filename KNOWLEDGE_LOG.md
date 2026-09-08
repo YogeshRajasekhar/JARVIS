@@ -234,3 +234,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-08
 
 **Fact of the day:** "I am." is the shortest complete sentence in the English language.
+
+## 2026-09-08
+
+**Advice of the day:** Vinegar is a powerful cleaning agent.

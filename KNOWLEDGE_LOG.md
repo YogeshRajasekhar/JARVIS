@@ -266,3 +266,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-09
 
 **Fact of the day:** Yo-yos were used as weapons by warriors in the Philippines in the 16th century.
+
+## 2026-09-10
+
+**Fact of the day:** The San Francisco Cable cars are the only mobile National Monuments.

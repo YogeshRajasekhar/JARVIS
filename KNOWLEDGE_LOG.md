@@ -282,3 +282,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-10
 
 **Fact of the day:** The world record for spitting a watermelon seed is 65 feet 4 inches.
+
+## 2026-09-10
+
+**Fact of the day:** The Guinness Book of Records holds the record for being the book most often stolen from Libraries.

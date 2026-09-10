@@ -270,3 +270,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-10
 
 **Fact of the day:** The San Francisco Cable cars are the only mobile National Monuments.
+
+## 2026-09-10
+
+**Fact of the day:** Gary, Indiana is the murder capital of the U.S. - probably the world.

@@ -274,3 +274,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-10
 
 **Fact of the day:** Gary, Indiana is the murder capital of the U.S. - probably the world.
+
+## 2026-09-10
+
+**Advice of the day:** The most delicious cocktails often have the highest alcohol content. Always pace yourself to preserve your dignity.

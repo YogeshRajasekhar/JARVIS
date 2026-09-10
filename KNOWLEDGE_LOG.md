@@ -278,3 +278,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-10
 
 **Advice of the day:** The most delicious cocktails often have the highest alcohol content. Always pace yourself to preserve your dignity.
+
+## 2026-09-10
+
+**Fact of the day:** The world record for spitting a watermelon seed is 65 feet 4 inches.

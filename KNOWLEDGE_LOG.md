@@ -290,3 +290,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-11
 
 **Fact of the day:** Canadian researchers have found that Einstein's brain was 15% wider than normal.
+
+## 2026-09-11
+
+**Advice of the day:** Accentuate the positive, eliminate the negative.

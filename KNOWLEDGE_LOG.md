@@ -286,3 +286,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-10
 
 **Fact of the day:** The Guinness Book of Records holds the record for being the book most often stolen from Libraries.
+
+## 2026-09-11
+
+**Fact of the day:** Canadian researchers have found that Einstein's brain was 15% wider than normal.

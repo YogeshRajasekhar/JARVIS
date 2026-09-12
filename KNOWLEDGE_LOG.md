@@ -310,3 +310,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-12
 
 **Fact of the day:** Months that begin on a Sunday will always have a "Friday the 13th."
+
+## 2026-09-12
+
+**Advice of the day:** Drink a glass of water before meals.

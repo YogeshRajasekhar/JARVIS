@@ -322,3 +322,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-12
 
 **Fact of the day:** Jimmy Carter was the first U.S. President to be born in a hospital.
+
+## 2026-09-12
+
+**Advice of the day:** Once you find a really good friend don't do anything that could mess up your friendship.

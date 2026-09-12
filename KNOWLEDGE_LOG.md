@@ -314,3 +314,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-12
 
 **Advice of the day:** Drink a glass of water before meals.
+
+## 2026-09-12
+
+**Advice of the day:** Learn from your mistakes.

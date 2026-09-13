@@ -342,3 +342,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-13
 
 **Advice of the day:** There is no reason at all to believe that White Wine is any different to water when it comes to removing Red Wine stains.
+
+## 2026-09-13
+
+**Advice of the day:** Don't give a speech. Put on a show.

@@ -346,3 +346,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-13
 
 **Advice of the day:** Don't give a speech. Put on a show.
+
+## 2026-09-14
+
+**Advice of the day:** You have as many hours in a day as the people you admire most.

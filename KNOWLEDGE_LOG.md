@@ -358,3 +358,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-14
 
 **Fact of the day:** Who`s that playing the piano on the "Mad About You" theme? Paul Reiser himself.
+
+## 2026-09-14
+
+**Advice of the day:** Eat food. Not too much, mostly plants.

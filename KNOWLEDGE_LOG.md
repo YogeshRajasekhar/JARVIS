@@ -390,3 +390,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-16
 
 **Fact of the day:** There are more psychoanalysts per capita in Buenos Aires than any other place in the world.
+
+## 2026-09-16
+
+**Fact of the day:** There is a city called Rome on every continent.

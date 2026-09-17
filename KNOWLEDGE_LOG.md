@@ -418,3 +418,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-17
 
 **Advice of the day:** True happiness always resides in the quest.
+
+## 2026-09-17
+
+**Fact of the day:** The average lead pencil will draw a line 35 miles long or write approximately 50,000 English words.  More than 2 billion pencils are manufactured each year in the United States. If these were laid end to end they would circle the world nine times.

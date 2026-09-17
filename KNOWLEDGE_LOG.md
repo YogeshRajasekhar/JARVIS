@@ -414,3 +414,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-17
 
 **Fact of the day:** Men can read smaller print than women; women can hear better.
+
+## 2026-09-17
+
+**Advice of the day:** True happiness always resides in the quest.

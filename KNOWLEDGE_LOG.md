@@ -410,3 +410,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-17
 
 **Advice of the day:** Smile and the world smiles with you. Frown and you're on your own.
+
+## 2026-09-17
+
+**Fact of the day:** Men can read smaller print than women; women can hear better.

@@ -406,3 +406,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-16
 
 **Advice of the day:** Enjoy a little nonsense now and then.
+
+## 2026-09-17
+
+**Advice of the day:** Smile and the world smiles with you. Frown and you're on your own.

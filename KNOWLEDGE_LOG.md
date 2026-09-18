@@ -430,3 +430,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-18
 
 **Fact of the day:** If you plant an apple seed, it is almost guaranteed to grow a tree of a different type of apple.
+
+## 2026-09-18
+
+**Fact of the day:** Telly Savalas and Louis Armstrong died on their birthdays.  

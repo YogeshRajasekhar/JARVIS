@@ -458,3 +458,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-19
 
 **Fact of the day:** The city of Venice stands on about 120 small islands.
+
+## 2026-09-19
+
+**Advice of the day:** If you're going bald, don't comb your hair over your bald patch.

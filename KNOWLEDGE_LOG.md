@@ -490,3 +490,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-21
 
 **Fact of the day:** There are 1 million ants for every human in the world.
+
+## 2026-09-21
+
+**Advice of the day:** Avoid mixing Ginger Nuts with other biscuits, they contaminate. Keep separated.

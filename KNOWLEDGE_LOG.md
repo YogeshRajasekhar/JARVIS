@@ -498,3 +498,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-21
 
 **Fact of the day:** The symbol on the "pound" key (#) is called an octothorpe..  
+
+## 2026-09-21
+
+**Advice of the day:** The person who never made a mistake never made anything.

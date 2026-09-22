@@ -510,3 +510,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-22
 
 **Advice of the day:** Always double check you actually attached the file to the email.
+
+## 2026-09-22
+
+**Advice of the day:** If you don't ask, you don't get.

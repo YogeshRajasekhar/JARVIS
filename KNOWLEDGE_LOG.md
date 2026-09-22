@@ -506,3 +506,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-21
 
 **Advice of the day:** Measure twice, cut once.
+
+## 2026-09-22
+
+**Advice of the day:** Always double check you actually attached the file to the email.

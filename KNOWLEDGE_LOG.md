@@ -538,3 +538,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-23
 
 **Advice of the day:** Do not seek praise, seek criticism.
+
+## 2026-09-23
+
+**Fact of the day:** A “jiffy” is the scientific name for 1/100th of a second.

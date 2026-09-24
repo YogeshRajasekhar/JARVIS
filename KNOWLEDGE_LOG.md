@@ -546,3 +546,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-23
 
 **Fact of the day:** Months that begin on a Sunday will always have a "Friday the 13th."
+
+## 2026-09-24
+
+**Fact of the day:** The Nullarbor Plain of Australia covers 100,000 square miles (160,900 km) without a tree.

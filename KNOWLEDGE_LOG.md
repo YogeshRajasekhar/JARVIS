@@ -570,3 +570,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-25
 
 **Fact of the day:** The only two days of the year in which there are no professional sports games--MLB, NBA, NHL, or NFL--are the day before and the day after the Major League All-Star Game.
+
+## 2026-09-25
+
+**Fact of the day:** Between 2 and 3 jockeys are killed each year in horse racing.

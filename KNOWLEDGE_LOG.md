@@ -574,3 +574,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-25
 
 **Fact of the day:** Between 2 and 3 jockeys are killed each year in horse racing.
+
+## 2026-09-25
+
+**Fact of the day:** Sex is biochemically no different from eating large quantities of chocolate.

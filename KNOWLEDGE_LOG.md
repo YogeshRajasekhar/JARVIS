@@ -566,3 +566,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-24
 
 **Fact of the day:** Maine is the only state whose name is just one syllable.
+
+## 2026-09-25
+
+**Fact of the day:** The only two days of the year in which there are no professional sports games--MLB, NBA, NHL, or NFL--are the day before and the day after the Major League All-Star Game.

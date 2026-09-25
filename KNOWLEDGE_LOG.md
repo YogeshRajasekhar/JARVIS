@@ -578,3 +578,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-25
 
 **Fact of the day:** Sex is biochemically no different from eating large quantities of chocolate.
+
+## 2026-09-25
+
+**Advice of the day:** Don't be afraid of silly ideas.

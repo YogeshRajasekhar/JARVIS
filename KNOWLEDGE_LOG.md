@@ -594,3 +594,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-26
 
 **Advice of the day:** Age is of no importance, unless you are a cheese.
+
+## 2026-09-26
+
+**Fact of the day:** Slugs have four noses.

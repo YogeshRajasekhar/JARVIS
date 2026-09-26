@@ -598,3 +598,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-26
 
 **Fact of the day:** Slugs have four noses.
+
+## 2026-09-26
+
+**Advice of the day:** Do a bit more for your friends.

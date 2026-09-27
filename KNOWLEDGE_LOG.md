@@ -606,3 +606,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-26
 
 **Fact of the day:** In 10 minutes, a hurricane releases more energy than all the world’s nuclear weapons combined.
+
+## 2026-09-27
+
+**Advice of the day:** Some of life's best lessons are learnt at the worst times.

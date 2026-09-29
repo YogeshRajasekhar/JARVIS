@@ -650,3 +650,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-29
 
 **Advice of the day:** Don't cross the streams.
+
+## 2026-09-29
+
+**Advice of the day:** If you are ever in doubt about whether or not to wash your hair: Wash it.

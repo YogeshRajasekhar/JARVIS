@@ -666,3 +666,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-09-29
 
 **Fact of the day:** 70% of all boats sold are used for fishing.
+
+## 2026-09-30
+
+**Fact of the day:** Charlie Chaplin once won third prize in a Charlie Chaplin look-alike contest.

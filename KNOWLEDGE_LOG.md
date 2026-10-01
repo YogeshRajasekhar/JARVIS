@@ -690,3 +690,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-01
 
 **Advice of the day:** Don't assume anything is possible or impossible until you've asked the people who will be doing the work.
+
+## 2026-10-01
+
+**Advice of the day:** Once in a while, eat some sweets you used to enjoy when you were younger.

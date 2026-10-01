@@ -694,3 +694,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-01
 
 **Advice of the day:** Once in a while, eat some sweets you used to enjoy when you were younger.
+
+## 2026-10-01
+
+**Fact of the day:** No matter where you stand in Michigan, you are never more than 85 miles from a Great Lake.

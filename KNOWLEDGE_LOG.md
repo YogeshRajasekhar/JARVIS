@@ -718,3 +718,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-02
 
 **Advice of the day:** Always double check you actually attached the file to the email.
+
+## 2026-10-02
+
+**Advice of the day:** There is no reason at all to believe that White Wine is any different to water when it comes to removing Red Wine stains.

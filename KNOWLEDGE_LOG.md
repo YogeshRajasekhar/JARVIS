@@ -714,3 +714,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-02
 
 **Fact of the day:** Average number of people airborne over the US any given hour: 61,000.
+
+## 2026-10-02
+
+**Advice of the day:** Always double check you actually attached the file to the email.

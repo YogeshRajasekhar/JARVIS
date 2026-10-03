@@ -738,3 +738,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-03
 
 **Fact of the day:** Elwood Edwards did the voice for the AOL sound files (i.e. “You’ve got Mail!”).
+
+## 2026-10-03
+
+**Advice of the day:** Always get two ciders.

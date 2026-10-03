@@ -742,3 +742,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-03
 
 **Advice of the day:** Always get two ciders.
+
+## 2026-10-03
+
+**Fact of the day:** The U.S. city with the highest rate of lightning strikes per capita is Clearwater, Florida.

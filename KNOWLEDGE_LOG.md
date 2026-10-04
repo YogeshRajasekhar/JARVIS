@@ -750,3 +750,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-04
 
 **Advice of the day:** Always block trolls.
+
+## 2026-10-04
+
+**Fact of the day:** In 1912 a law passed in Nebraska where drivers in the country at night were required to stop every 150 yards, send up a skyrocket, wait eight minutes for the road to clear before proceeding cautiously, all the while blowing their horn and shooting off flares.

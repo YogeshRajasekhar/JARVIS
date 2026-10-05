@@ -774,3 +774,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-05
 
 **Advice of the day:** Always bet on black.
+
+## 2026-10-05
+
+**Fact of the day:** More people are killed annually by donkeys than airplane crashes.

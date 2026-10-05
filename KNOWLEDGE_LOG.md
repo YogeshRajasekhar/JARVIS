@@ -778,3 +778,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-05
 
 **Fact of the day:** More people are killed annually by donkeys than airplane crashes.
+
+## 2026-10-05
+
+**Fact of the day:** Astronaut Neil Armstrong first stepped on the moon with his left foot.

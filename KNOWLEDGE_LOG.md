@@ -766,3 +766,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-04
 
 **Advice of the day:** Try using an old idea.
+
+## 2026-10-05
+
+**Advice of the day:** The hardest things to say are usually the most important.

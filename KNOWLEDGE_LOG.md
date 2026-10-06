@@ -798,3 +798,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-06
 
 **Fact of the day:** Rhode Island is the only state which the hammer throw is a legal high school sport.
+
+## 2026-10-06
+
+**Advice of the day:** Try to not compliment people on things they don't control.

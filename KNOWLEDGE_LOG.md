@@ -782,3 +782,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-05
 
 **Fact of the day:** Astronaut Neil Armstrong first stepped on the moon with his left foot.
+
+## 2026-10-06
+
+**Advice of the day:** YOLO

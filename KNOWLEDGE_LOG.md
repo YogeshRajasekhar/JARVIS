@@ -810,3 +810,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-07
 
 **Fact of the day:** Every day, 7% of the US eats at McDonald’s.
+
+## 2026-10-07
+
+**Fact of the day:** Icelanders consume more Coca-Cola per Capita than any other nation.

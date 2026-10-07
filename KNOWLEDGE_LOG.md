@@ -818,3 +818,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-07
 
 **Fact of the day:** Chewing gum while peeling onions will keep you from crying.
+
+## 2026-10-07
+
+**Fact of the day:** 98% of Japanese are cremated.

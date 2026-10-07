@@ -806,3 +806,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-07
 
 **Advice of the day:** When painting a room, preparation is key. The actual painting should account for about 40% of the work.
+
+## 2026-10-07
+
+**Fact of the day:** Every day, 7% of the US eats at McDonald’s.

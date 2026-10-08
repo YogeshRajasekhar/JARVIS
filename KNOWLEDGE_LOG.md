@@ -838,3 +838,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-08
 
 **Fact of the day:** The citrus soda 7-UP was created in 1929; `7` was selected after the original 7-ounce containers and `UP` for the direction of the bubbles.
+
+## 2026-10-08
+
+**Fact of the day:** A giraffe can go without water longer than a camel.

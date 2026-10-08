@@ -822,3 +822,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-07
 
 **Fact of the day:** 98% of Japanese are cremated.
+
+## 2026-10-08
+
+**Fact of the day:** "Evaluation and Parameterization of Stability and Safety Performance Characteristics of Two and Three Wheeled Vehicular Toys for Riding." Title of a $230,000 research project proposed by the Department of Health, Education and Welfare, to study the various ways children fall off bicycles.

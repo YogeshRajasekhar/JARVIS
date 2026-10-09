@@ -858,3 +858,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-09
 
 **Advice of the day:** As you get older, learn never to trust a fart.
+
+## 2026-10-09
+
+**Fact of the day:** Arabic numerals are not really Arabic; they were created in India.

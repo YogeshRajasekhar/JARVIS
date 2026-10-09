@@ -842,3 +842,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-08
 
 **Fact of the day:** A giraffe can go without water longer than a camel.
+
+## 2026-10-09
+
+**Fact of the day:** Leonardo da Vinci could write with one hand while drawing with the other

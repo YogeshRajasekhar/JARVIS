@@ -870,3 +870,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-10
 
 **Advice of the day:** Quality beats quantity.
+
+## 2026-10-10
+
+**Advice of the day:** When the cistern is filling, the seat is probably still warm.

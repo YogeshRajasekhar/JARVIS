@@ -878,3 +878,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-10
 
 **Advice of the day:** As things get closer to the light, the shadows get darker.
+
+## 2026-10-10
+
+**Advice of the day:** You're not as fat as you think you are.

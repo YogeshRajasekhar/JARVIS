@@ -862,3 +862,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-09
 
 **Fact of the day:** Arabic numerals are not really Arabic; they were created in India.
+
+## 2026-10-10
+
+**Advice of the day:** When faced with a choice, do both.

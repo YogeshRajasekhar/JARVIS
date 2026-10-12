@@ -918,3 +918,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-12
 
 **Fact of the day:** 315 entries in Webster’s 1996 dictionary were misspelled.
+
+## 2026-10-12
+
+**Advice of the day:** Happiness is a journey, not a destination.

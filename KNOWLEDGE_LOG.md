@@ -934,3 +934,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-13
 
 **Fact of the day:** In Disney`s Fantasia, the Sorcerer`s name is "Yensid" (Disney backwards.)
+
+## 2026-10-13
+
+**Advice of the day:** Don't take life too seriously.

@@ -942,3 +942,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-13
 
 **Fact of the day:** A man's beard grows fastest when he anticipates sex.
+
+## 2026-10-14
+
+**Advice of the day:** Good things come to those who wait.

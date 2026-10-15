@@ -978,3 +978,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-15
 
 **Fact of the day:** The average American/Canadian will eat about 11.9 pounds of cereal per year!
+
+## 2026-10-15
+
+**Advice of the day:** Don't try and bump start a motorcycle on an icy road.

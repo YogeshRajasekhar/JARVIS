@@ -966,3 +966,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-15
 
 **Advice of the day:** Never run with scissors.
+
+## 2026-10-15
+
+**Advice of the day:** It is easy to sit up and take notice, what's difficult is getting up and taking action.

@@ -1018,3 +1018,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-17
 
 **Fact of the day:** The penguin is the only bird that can’t fly but can swim.
+
+## 2026-10-17
+
+**Fact of the day:** A cockroach will live nine days without its head before it starves to death.

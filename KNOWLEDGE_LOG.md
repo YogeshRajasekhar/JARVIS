@@ -1002,3 +1002,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-16
 
 **Advice of the day:** Sing in the shower.
+
+## 2026-10-17
+
+**Fact of the day:** The dot over the letter “i” is called a tittle.

@@ -1034,3 +1034,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-18
 
 **Fact of the day:** The scene where Indiana Jones shoots the swordsman in Raider’s of the Lost Ark was Harrison Ford's idea so that he could take a bathroom break.
+
+## 2026-10-18
+
+**Fact of the day:** Shakespeare spelled his OWN name several different ways.

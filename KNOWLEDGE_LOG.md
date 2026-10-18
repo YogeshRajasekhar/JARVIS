@@ -1030,3 +1030,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-18
 
 **Advice of the day:** It always seems impossible, until it's done.
+
+## 2026-10-18
+
+**Fact of the day:** The scene where Indiana Jones shoots the swordsman in Raider’s of the Lost Ark was Harrison Ford's idea so that he could take a bathroom break.

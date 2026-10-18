@@ -1026,3 +1026,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-18
 
 **Advice of the day:** You spend half your life asleep or in bed. It's worth spending money on a good mattress, decent pillows and a comfy duvet.
+
+## 2026-10-18
+
+**Advice of the day:** It always seems impossible, until it's done.

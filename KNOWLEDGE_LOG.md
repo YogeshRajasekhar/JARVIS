@@ -1058,3 +1058,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-19
 
 **Advice of the day:** Never waste an opportunity to tell someone you love them.
+
+## 2026-10-19
+
+**Fact of the day:** Mount Olympus Mons on Mars is three times the size of Mount Everest.

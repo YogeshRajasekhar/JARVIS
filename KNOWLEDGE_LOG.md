@@ -1042,3 +1042,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-18
 
 **Advice of the day:** The most important thing is the thing most easily forgotten.
+
+## 2026-10-19
+
+**Advice of the day:** When hugging, hug with both arms and apply reasonable, affectionate pressure.

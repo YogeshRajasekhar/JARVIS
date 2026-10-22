@@ -1102,3 +1102,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-21
 
 **Advice of the day:** If it ain't broke don't fix it.
+
+## 2026-10-22
+
+**Advice of the day:** Some people would be better off if they took their own advice.

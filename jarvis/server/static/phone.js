@@ -145,7 +145,7 @@ async function speak(text) {
   const clean = text.replace(/https?:\/\/\S+/g, "the link").replace(/\S+@\S+\.\S+/g, (m) => m.split("@")[0]);
   setState("speaking");
   try {
-    if (Native?.speak) { await Native.speak({ text: clean }); return; }
+    if (Native?.speak) { await Native.speak({ text: clean }).catch(() => {}); return; }
     if (!("speechSynthesis" in window)) return;
     await new Promise((res) => {
       const u = new SpeechSynthesisUtterance(clean);
@@ -169,11 +169,20 @@ async function listen() {
   if (listening) return;
   speechSynthesis?.cancel?.();
   if (sttMode === "whisper" && serverStt) return recordForServer();
+  if (sttMode === "whisper" && !serverStt && !listen.warned) {
+    listen.warned = true;
+    note("Whisper isn't available on the server yet (update the server), so I'm using the phone recognizer.");
+  }
   if (Native?.listen) {
     listening = true; setState("listening"); $("mic").classList.add("live");
     let r = null, failed = null;
-    try { r = await Native.listen({ language: "en-IN" }); }
-    catch (e) { failed = String(e?.message || e); }
+    try {
+      // Some recognizers never call back; give up after 20 s instead of leaving the mic stuck.
+      r = await Promise.race([
+        Native.listen({ language: "en-IN" }),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("no response from phone recognizer")), 20000)),
+      ]);
+    } catch (e) { failed = String(e?.message || e); }
     finally { listening = false; $("mic").classList.remove("live"); setState("idle"); }
     if (r?.text) { send(r.text, "voice"); return; }
     Native.resumeWake?.();
@@ -246,6 +255,11 @@ async function recordForServer() {
 $("mic").onclick = () => {
   if (listening && stopRecording) return stopRecording();   // tap again to finish early
   if (listening && rec) return rec.stop();
+  if (listening) {                                          // phone recognizer busy: reset so the next tap works
+    listening = false; $("mic").classList.remove("live"); setState("idle"); Native?.resumeWake?.();
+    note("Stopped listening. Tap the mic again to talk.");
+    return;
+  }
   listen();
 };
 
@@ -255,7 +269,16 @@ async function setWake(on) {
   $("wake-toggle").setAttribute("aria-pressed", on);
   $("wake-label").textContent = on ? "Listening for Hey JARVIS" : "Hey JARVIS is off";
   store.set("jarvis_wake", on ? "1" : "0");
-  if (Native?.wakeWord) { await Native.wakeWord({ enabled: on }); return; }
+  if (Native?.wakeWord) {
+    try { await Native.wakeWord({ enabled: on }); }
+    catch (e) {
+      $("wake-toggle").setAttribute("aria-pressed", "false");
+      $("wake-label").textContent = "Hey JARVIS is off";
+      store.set("jarvis_wake", "0");
+      note(`Couldn't start Hey JARVIS: ${e?.message || e}`);
+    }
+    return;
+  }
   if (!on) { wakeStream?.getTracks().forEach((t) => t.stop()); await wakeCtx?.close(); wakeCtx = null; return; }
   try {
     wakeStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true } });
@@ -470,7 +493,12 @@ let holdT = null;
 const yes = $("appr-yes");
 yes.addEventListener("pointerdown", async () => {
   if (!showing?.strong_auth) return;
-  if (Native?.biometric) { const ok = await Native.biometric({ reason: "Confirm this action" }).catch(() => null); if (ok?.verified) finishApproval(true, "biometric"); return; }
+  if (Native?.biometric) {
+    const ok = await Native.biometric({ reason: "Confirm this action" }).catch((e) => ({ error: e?.message || String(e) }));
+    if (ok?.verified) finishApproval(true, "biometric");
+    else note(`Not confirmed${ok?.error ? `: ${ok.error}` : ""}. Nothing was sent.`);
+    return;
+  }
   yes.classList.add("hold"); holdT = setTimeout(() => { yes.classList.remove("hold"); finishApproval(true, "biometric"); }, 1200);
 });
 ["pointerup", "pointerleave"].forEach((ev) => yes.addEventListener(ev, () => { clearTimeout(holdT); yes.classList.remove("hold"); }));
@@ -531,6 +559,17 @@ function tick() { $("clock").textContent = new Date().toLocaleTimeString([], { h
 setInterval(tick, 10000); tick();
 let toastT = null;
 function toast(text) { const t = $("toast"); t.textContent = text; t.classList.remove("hidden"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.add("hidden"), 4000); }
+
+// ------------------------------------------------------------------ never fail silently
+let lastErr = "";
+function reportError(msg) {
+  msg = String(msg || "unknown error").slice(0, 200);
+  if (msg === lastErr) return;
+  lastErr = msg;
+  try { note(`Something went wrong: ${msg}`); } catch {}
+}
+window.addEventListener("error", (e) => reportError(e.message));
+window.addEventListener("unhandledrejection", (e) => reportError(e.reason?.message || e.reason));
 
 // ------------------------------------------------------------------ boot
 function start() {

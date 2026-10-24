@@ -121,6 +121,8 @@ public class JarvisPlugin extends Plugin {
     }
 
     // ------------------------------------------------------------------ wake word
+    private boolean notificationsAsked = false;
+
     @PluginMethod
     public void wakeWord(PluginCall call) {
         boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
@@ -133,18 +135,24 @@ public class JarvisPlugin extends Plugin {
             requestPermissionForAlias("microphone", call, "wakePermCallback");
             return;
         }
-        if (Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) {
+        // Ask for notifications once (the listening notification); work without it if refused.
+        if (Build.VERSION.SDK_INT >= 33 && !notificationsAsked && getPermissionState("notifications") != PermissionState.GRANTED) {
+            notificationsAsked = true;
             requestPermissionForAlias("notifications", call, "wakePermCallback");
             return;
         }
-        wakeService(WakeWordService.ACTION_START);
-        call.resolve();
+        try {
+            wakeService(WakeWordService.ACTION_START);
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Android refused to start the wake-word listener: " + e.getMessage());
+        }
     }
 
     @PermissionCallback
     private void wakePermCallback(PluginCall call) {
         if (getPermissionState("microphone") != PermissionState.GRANTED) {
-            call.reject("Microphone permission denied");
+            call.reject("Microphone permission denied. Allow it in Settings > Apps > JARVIS > Permissions.");
             return;
         }
         wakeWord(call);

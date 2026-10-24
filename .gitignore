@@ -4,11 +4,11 @@ __pycache__/
 venv/
 .venv/
 .env
-data/
+/data/
 
 # JARVIS v2
-data/
-models/
+/data/
+/models/
 tests_v2/artifacts/
 *.db
 *.db-wal

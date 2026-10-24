@@ -24,6 +24,7 @@ import secrets, base64, os, re
 p = ".env"; s = open(p).read()
 s = re.sub(r"^JARVIS_DEVICE_TOKEN=.*$", "JARVIS_DEVICE_TOKEN=" + secrets.token_urlsafe(24), s, flags=re.M)
 s = re.sub(r"^JARVIS_SEED_DEMO=.*$", "JARVIS_SEED_DEMO=0", s, flags=re.M)
+s = re.sub(r"^JARVIS_DB_PATH=.*$", "JARVIS_DB_PATH=/data/jarvis.db", s, flags=re.M)  # the Docker volume
 s = re.sub(r"^JARVIS_DATA_KEY=.*$", "JARVIS_DATA_KEY=" + base64.urlsafe_b64encode(os.urandom(32)).decode(), s, flags=re.M)
 open(p, "w").write(s)
 PY

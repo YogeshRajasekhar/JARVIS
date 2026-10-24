@@ -25,7 +25,7 @@ def main() -> None:
                 line += f" {len(models)} models visible to this key;"
                 if hasattr(p, "resolve") and (p.model is None or p.model not in models):
                     p.resolve()
-                out = p.complete("Reply with the single word OK.", max_tokens=5)
+                out = p.complete("Reply with the single word OK.", max_tokens=20)
                 line += f" using {p.model} -> test reply {out.strip()[:20]!r}  OK"
             except Exception as e:
                 line += f" FAILED: {str(e)[:220]}"

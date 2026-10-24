@@ -337,3 +337,33 @@ def test_offline_engine_explains_cloud_failure():
     out = f.complete("User: tell me about black holes", task="chat")
     assert "can't reach my language models" in out
     assert "groq" in f.last_errors
+
+
+def test_reasoning_model_gets_low_effort_and_empty_reply_falls_back():
+    bodies = []
+
+    def h(req):
+        b = json.loads(req.content)
+        bodies.append(b)
+        return httpx.Response(200, json={"choices": [{"message": {"content": ""}, "finish_reason": "length"}]})
+
+    groq = OpenAICompatibleLLM("groq", "https://x/v1", "k", "openai/gpt-oss-20b", transport=_transport(h), family="groq")
+    chain = FallbackLLM([groq, Flaky("gemini", "ok")])
+    assert chain.complete("hi", max_tokens=5) == "gemini:hi"          # empty Groq reply -> next provider
+    assert bodies[0]["reasoning_effort"] == "low" and bodies[0]["max_tokens"] >= 1024
+
+
+def test_gemini_thinking_disabled_and_option_rejection_handled():
+    bodies = []
+
+    def h(req):
+        b = json.loads(req.content)
+        bodies.append(b)
+        if "thinkingConfig" in b["generationConfig"]:
+            return httpx.Response(400, json={"error": {"message": "Unknown field thinkingConfig.thinkingLevel"}})
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    llm = GeminiLLM("KEY", "gemini-3.8-flash", transport=_transport(h))
+    assert llm.complete("q") == "ok"
+    assert bodies[0]["generationConfig"]["thinkingConfig"] == {"thinkingLevel": "low"}
+    assert "thinkingConfig" not in bodies[-1]["generationConfig"]

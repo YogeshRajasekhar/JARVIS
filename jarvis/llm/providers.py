@@ -68,6 +68,10 @@ def pick_model(available: list[str], prefs: list[str], avoid: Optional[set] = No
     return max(cands, key=_rank) if cands else None
 
 
+def _is_reasoning(model: Optional[str]) -> bool:
+    return bool(model and re.search(r"gpt-oss|deepseek-r|qwq|reasoning|-r1\b|magistral|\bo[134]-", model, re.I))
+
+
 def _model_missing(status: int, text: str) -> bool:
     if status == 404:
         return True
@@ -121,6 +125,7 @@ class OpenAICompatibleLLM:
         headers.update(extra_headers or {})
         self._client = httpx.Client(timeout=timeout, headers=headers, transport=transport)
         self._json_mode_supported = True
+        self._reasoning_params = True
         self._tried: set = set()
 
     def list_models(self) -> list[str]:
@@ -146,6 +151,14 @@ class OpenAICompatibleLLM:
         for attempt in range(2):
             body = {"model": self.model, "messages": _messages(system, prompt, history),
                     "temperature": temperature, "max_tokens": max_tokens}
+            if _is_reasoning(self.model):
+                # Reasoning models think before answering, and the thinking counts against max_tokens.
+                # Keep the thinking short and leave room for the actual answer.
+                body["max_tokens"] = max_tokens + 1024
+                if self._reasoning_params:
+                    body["reasoning_effort"] = "low"
+                    if self.family == "groq":
+                        body["reasoning_format"] = "hidden"
             if json and self._json_mode_supported:
                 body["response_format"] = {"type": "json_object"}
             try:
@@ -157,6 +170,11 @@ class OpenAICompatibleLLM:
                 self._json_mode_supported = False
                 body.pop("response_format")
                 r = self._client.post(self._url, json=body)
+            if r.status_code == 400 and "reasoning" in r.text.lower() and "reasoning_effort" in body:
+                self._reasoning_params = False   # this model/provider doesn't take reasoning options
+                body.pop("reasoning_effort", None)
+                body.pop("reasoning_format", None)
+                r = self._client.post(self._url, json=body)
             if _model_missing(r.status_code, r.text) and attempt == 0:
                 self._tried.add(self.model)
                 self.resolve()           # model retired or not allowed for this key: pick another
@@ -167,9 +185,14 @@ class OpenAICompatibleLLM:
             if r.status_code >= 400:
                 raise LLMUnavailable(f"{self.name}: HTTP {r.status_code} {r.text[:200]}")
             try:
-                return r.json()["choices"][0]["message"]["content"] or ""
+                content = r.json()["choices"][0]["message"]["content"] or ""
             except (KeyError, IndexError, ValueError) as e:
                 raise LLMUnavailable(f"{self.name}: malformed response {r.text[:200]}") from e
+            if not content.strip():
+                # An empty answer is a failure, not a result: let the fallback chain try the next provider.
+                raise LLMUnavailable(f"{self.name}: empty reply (finish_reason="
+                                     f"{r.json()['choices'][0].get('finish_reason')})")
+            return content
         raise LLMUnavailable(f"{self.name}: no working model")
 
 
@@ -178,9 +201,10 @@ class GeminiLLM:
 
     BASE = "https://generativelanguage.googleapis.com/v1beta/models"
 
-    def __init__(self, api_key: str, model: str, timeout: float = 30.0,
+    def __init__(self, api_key: str, model: str, timeout: float = 45.0,
                  transport: Optional[httpx.BaseTransport] = None, tier: str = "fast"):
         self.family, self.tier = "gemini", tier
+        self._thinking_params = True
         self.model = None if not model or model == "auto" else model
         self.name = f"gemini:{self.model or 'auto'}"
         self._client = httpx.Client(
@@ -234,10 +258,23 @@ class GeminiLLM:
         if json:
             body["generationConfig"]["responseMimeType"] = "application/json"
         for attempt in range(2):
+            gen = body["generationConfig"]
+            gen.pop("thinkingConfig", None)
+            if self._thinking_params:
+                # Gemini 2.5+/3.x think before answering by default, which is slow and eats the token budget.
+                # A personal assistant's short tasks don't need it.
+                if re.match(r"gemini-2\.5", self.model or ""):
+                    gen["thinkingConfig"] = {"thinkingBudget": 0 if "pro" not in self.model else 128}
+                elif re.match(r"gemini-[3-9]", self.model or ""):
+                    gen["thinkingConfig"] = {"thinkingLevel": "low"}
             try:
                 r = self._client.post(f"{self.BASE}/{self.model}:generateContent", json=body)
             except httpx.HTTPError as e:
                 raise LLMUnavailable(f"{self.name}: network error {e}") from e
+            if r.status_code == 400 and "thinking" in r.text.lower() and "thinkingConfig" in gen:
+                self._thinking_params = False   # this model doesn't accept the option: retry without it
+                gen.pop("thinkingConfig", None)
+                r = self._client.post(f"{self.BASE}/{self.model}:generateContent", json=body)
             if _model_missing(r.status_code, r.text) and attempt == 0:
                 self._tried.add(self.model)
                 self.resolve()
@@ -248,9 +285,12 @@ class GeminiLLM:
                 raise LLMUnavailable(f"{self.name}: HTTP {r.status_code} {r.text[:200]}")
             try:
                 parts = r.json()["candidates"][0]["content"]["parts"]
-                return "".join(p.get("text", "") for p in parts if not p.get("thought"))
+                text = "".join(p.get("text", "") for p in parts if not p.get("thought"))
             except (KeyError, IndexError, ValueError) as e:
                 raise LLMUnavailable(f"{self.name}: malformed/blocked response {r.text[:200]}") from e
+            if not text.strip():
+                raise LLMUnavailable(f"{self.name}: empty reply")
+            return text
         raise LLMUnavailable(f"{self.name}: no working model")
 
 

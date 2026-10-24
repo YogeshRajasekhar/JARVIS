@@ -1146,3 +1146,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-24
 
 **Advice of the day:** When you're at a concert or event, enjoy the moment, enjoy being there. Try leaving your camera in your pocket.
+
+## 2026-10-24
+
+**Fact of the day:** The skeleton of Jeremy Bentham is present at all important meetings of the University of London

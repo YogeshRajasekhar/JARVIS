@@ -342,8 +342,21 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
             except Exception as ex:  # never kill the loop
                 log.warning("proactive loop: %s", ex)
 
+    async def backup_loop():
+        """Daily database backup next to the database (7 kept)."""
+        if svc.db.path == ":memory:":
+            return
+        folder = os.path.join(os.path.dirname(os.path.abspath(svc.db.path)), "backups")
+        while True:
+            try:
+                await asyncio.to_thread(svc.db.backup, folder)
+            except Exception as ex:
+                log.warning("backup failed: %s", ex)
+            await asyncio.sleep(24 * 3600)
+
     @app.on_event("startup")
     async def _start():
         app.state.proactive = asyncio.create_task(proactive_loop())
+        app.state.backups = asyncio.create_task(backup_loop())
 
     return app

@@ -201,6 +201,29 @@ class Database:
     def audit_log(self, limit: int = 50) -> list[dict]:
         return self.query("SELECT * FROM audit ORDER BY id DESC LIMIT ?", (limit,))
 
+    # ------------------------------------------------------------------ backups
+    def backup(self, directory: str, keep: int = 7) -> Optional[str]:
+        """Consistent online copy (SQLite backup API), one per day, newest `keep` kept."""
+        if self.path == ":memory:":
+            return None
+        os.makedirs(directory, exist_ok=True)
+        dest = os.path.join(directory, time.strftime("jarvis-%Y-%m-%d.db"))
+        with self._lock:
+            target = sqlite3.connect(dest)
+            try:
+                self._conn.backup(target)
+                target.execute("PRAGMA journal_mode=DELETE")  # one self-contained file, no -wal/-shm
+            finally:
+                target.close()
+        try:
+            os.chmod(dest, 0o600)
+        except OSError:
+            pass
+        files = sorted(f for f in os.listdir(directory) if f.startswith("jarvis-") and f.endswith(".db"))
+        for old in files[:-keep]:
+            os.remove(os.path.join(directory, old))
+        return dest
+
     def close(self) -> None:
         with self._lock:
             self._conn.close()

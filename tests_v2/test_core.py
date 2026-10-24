@@ -263,3 +263,18 @@ def test_graph_rejects_unknown_types():
     a = g.ensure_entity("A", "person")
     with pytest.raises(ValueError):
         g.add_edge(a, "missing", "relates_to")
+
+
+def test_backup_rotation(tmp_path):
+    db = Database(str(tmp_path / "j.db"))
+    db.add_message("user", "hello")
+    out = db.backup(str(tmp_path / "backups"))
+    import sqlite3 as _s
+    con = _s.connect(out)
+    assert con.execute("select content from messages").fetchone()[0] == "hello"
+    assert con.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+    con.close()
+    for i in range(9):
+        (tmp_path / "backups" / f"jarvis-2020-01-0{i + 1}.db").write_text("x")
+    db.backup(str(tmp_path / "backups"))
+    assert len(list((tmp_path / "backups").iterdir())) == 7

@@ -5,6 +5,15 @@
 #   cp ../.env.example .env   # fill in keys
 #   TS_AUTHKEY=tskey-... docker compose up -d --build
 services:
+  # One-shot: make the data volume writable by the unprivileged jarvis user (uid 10001)
+  # before anything else touches it. Runs on every `up`, takes a second, then exits.
+  init-data:
+    image: alpine:3.20
+    volumes:
+      - jarvis-data:/data
+    command: ["sh", "-c", "mkdir -p /data/backups && chown -R 10001:10001 /data && chmod 700 /data"]
+    restart: "no"
+
   tailscale:
     image: tailscale/tailscale:stable
     hostname: jarvis
@@ -37,20 +46,11 @@ services:
     security_opt: ["no-new-privileges:true"]
     cap_drop: [ALL]
     restart: unless-stopped
-    depends_on: [tailscale]
-
-  backup:
-    image: alpine:3.20
-    volumes:
-      - jarvis-data:/data
-    entrypoint: ["/bin/sh", "-c"]
-    # Nightly consistent copy of the database, 7 kept. The DB holds no plaintext secrets
-    # (OAuth tokens are encrypted with JARVIS_DATA_KEY, which is NOT in the volume).
-    command: >
-      "apk add --no-cache sqlite >/dev/null && while true; do
-        mkdir -p /data/backups && sqlite3 /data/jarvis.db \".backup /data/backups/jarvis-$$(date +%F).db\" &&
-        ls -1t /data/backups/*.db | tail -n +8 | xargs -r rm -f; sleep 86400; done"
-    restart: unless-stopped
+    depends_on:
+      tailscale:
+        condition: service_started
+      init-data:
+        condition: service_completed_successfully
 
 volumes:
   ts-state:

@@ -7,7 +7,7 @@ Everything below is free. Total time: about an hour, most of it waiting for sign
  ┌──────────────────────┐   Tailscale VPN    ┌──────────────────────────────┐
  │ JARVIS app           │  (private HTTPS,   │ tailscale  ─►  jarvis server │
  │  wake word on-device │◄──── no open ─────►│                SQLite volume │
- │  speech, TTS, prompts│      ports)        │ nightly DB backup (7 kept)   │
+ │  speech, TTS, prompts│      ports)        │ daily DB backup (7 kept)     │
  └──────────────────────┘                    └──────────────────────────────┘
 ```
 

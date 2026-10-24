@@ -135,7 +135,7 @@ $("dial-end").onclick = () => $("dialer").classList.add("hidden");
 // ------------------------------------------------------------------ speech out (free: Android TTS / speechSynthesis)
 let voice = null;
 function pickVoice() {
-  const vs = speechSynthesis?.getVoices?.() || [];
+  const vs = window.speechSynthesis?.getVoices?.() || [];
   voice = vs.find((v) => /en-GB/i.test(v.lang) && /male|daniel|george|arthur/i.test(v.name)) || vs.find((v) => /en-GB/i.test(v.lang)) || vs.find((v) => /^en/i.test(v.lang)) || null;
 }
 if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
@@ -167,7 +167,7 @@ let stopRecording = null;
 
 async function listen() {
   if (listening) return;
-  speechSynthesis?.cancel?.();
+  window.speechSynthesis?.cancel?.();   // absent in Android's WebView: must go through window
   if (sttMode === "whisper" && serverStt) return recordForServer();
   if (sttMode === "whisper" && !serverStt && !listen.warned) {
     listen.warned = true;

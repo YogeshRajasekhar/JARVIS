@@ -202,3 +202,32 @@ def test_whisper_voice_input_records_until_silence(page, server):
         assert pg.locator("#log li.you").last.inner_text() == "what's my battery"
     finally:
         speech.build_stt = speech_build
+
+
+def test_works_without_browser_speech_apis(server, page):
+    """Android's WebView has no speechSynthesis/SpeechRecognition. Tapping the mic must not crash."""
+    url, _ = server
+    if True:  # reuse the module's browser (Playwright allows one sync instance per thread)
+        ctx = page.context.browser.new_context(bypass_csp=True)
+        ctx.add_init_script("""
+            for (const k of ['speechSynthesis', 'SpeechSynthesisUtterance', 'SpeechRecognition', 'webkitSpeechRecognition']) {
+              try { delete window[k]; } catch {}
+              try { delete Window.prototype[k]; } catch {}
+            }
+        """)
+        pg = ctx.new_page()
+        errors = []
+        pg.on("pageerror", lambda e: errors.append(str(e)))
+        pg.goto(url + "/")
+        assert pg.evaluate("typeof speechSynthesis") == "undefined"
+        pg.fill("#pair-token", TOKEN)
+        pg.click("#pair-form .primary")
+        pg.wait_for_selector("#state:has-text('Ready')", timeout=10000)
+        pg.click("#mic")
+        pg.wait_for_timeout(1500)
+        pg.fill("#text", "hello")
+        pg.press("#text", "Enter")
+        pg.wait_for_selector("#log li.jarvis", timeout=8000)
+        notes = " ".join(pg.locator("#log li.note").all_inner_texts())
+        assert errors == [] and "Something went wrong" not in notes, (errors, notes)
+        ctx.close()

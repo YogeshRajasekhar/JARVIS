@@ -15,12 +15,13 @@ jobs:
   apk:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: "21" }
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with: { node-version: "22" }
-      - uses: android-actions/setup-android@v3
+      - name: Use the runner's preinstalled Android SDK
+        run: echo "sdk.dir=$ANDROID_HOME" > mobile/android/local.properties && ls "$ANDROID_HOME"
 
       - name: Install JS deps and copy the UI into the app
         working-directory: mobile

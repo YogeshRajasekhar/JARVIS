@@ -5,3 +5,15 @@ venv/
 .venv/
 .env
 data/
+
+# JARVIS v2
+data/
+models/
+tests_v2/artifacts/
+*.db
+*.db-wal
+*.db-shm
+google_credentials*.json
+android/app/build/
+android/.gradle/
+node_modules/

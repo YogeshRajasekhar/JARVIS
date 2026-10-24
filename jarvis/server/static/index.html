@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1322">
+<title>JARVIS</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wdth,wght@75..125,300..700&display=swap">
+<link rel="stylesheet" href="/static/phone.css">
+</head>
+<body>
+<div class="desk">
+  <div class="phone" id="phone">
+    <header class="statusbar">
+      <span id="clock">--:--</span>
+      <span class="sb-icons">
+        <span id="sb-dnd" class="sb hidden" title="Do not disturb">◐</span>
+        <span id="sb-bt" class="sb hidden" title="Bluetooth">ᛒ</span>
+        <span id="sb-wifi" class="sb" title="Wi-Fi">
+          <svg viewBox="0 0 16 12" width="14" height="11"><path d="M8 11.5 5.6 9a3.4 3.4 0 0 1 4.8 0zM3.4 6.8a6.5 6.5 0 0 1 9.2 0l-1.3 1.3a4.7 4.7 0 0 0-6.6 0zM1 4.4a9.9 9.9 0 0 1 14 0l-1.3 1.3a8.1 8.1 0 0 0-11.4 0z" fill="currentColor"/></svg>
+        </span>
+        <span id="sb-batt" class="batt"><i></i><b>78</b></span>
+      </span>
+    </header>
+
+    <!-- Pairing -->
+    <section id="pair" class="view pair">
+      <h1>Pair this phone with JARVIS</h1>
+      <p>Paste the pairing token shown when the server started. It stays on this device.</p>
+      <form id="pair-form">
+        <label for="pair-token">Pairing token</label>
+        <input id="pair-token" autocomplete="off" spellcheck="false" required minlength="8">
+        <button type="submit" class="primary">Pair</button>
+        <p class="err" id="pair-err" role="alert"></p>
+      </form>
+    </section>
+
+    <!-- Main assistant view -->
+    <section id="main" class="view hidden">
+      <div class="stage">
+        <canvas id="orb" width="560" height="560" aria-hidden="true"></canvas>
+        <p id="state" class="state" aria-live="polite">Connecting</p>
+        <button id="wake-toggle" class="wake" aria-pressed="false" title="Listen for Hey JARVIS">
+          <span class="dot"></span><span id="wake-label">Hey JARVIS is off</span>
+        </button>
+      </div>
+      <ol id="log" class="log" aria-live="polite"></ol>
+      <form id="composer" class="composer">
+        <button type="button" id="mic" class="mic" aria-label="Hold to talk">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12z" fill="currentColor"/></svg>
+        </button>
+        <input id="text" placeholder="Ask JARVIS" autocomplete="off" maxlength="2000" aria-label="Message">
+        <button type="submit" class="send" aria-label="Send">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z" fill="currentColor"/></svg>
+        </button>
+      </form>
+    </section>
+
+    <!-- Clock app (alarms, timers, reminders the assistant created) -->
+    <section id="clockapp" class="view panel hidden">
+      <h2>Clock</h2>
+      <h3>Alarms</h3><ul id="alarms" class="rows"></ul>
+      <h3>Timers</h3><ul id="timers" class="rows"></ul>
+      <h3>Reminders</h3><ul id="reminders" class="rows"></ul>
+      <h3>Messages sent</h3><ul id="smslog" class="rows"></ul>
+    </section>
+
+    <!-- Security -->
+    <section id="security" class="view panel hidden">
+      <h2>Security</h2>
+      <div class="lock">
+        <button id="lockdown" class="danger">Lock down JARVIS</button>
+        <p>Revokes every permission and cancels everything waiting for approval.</p>
+        <button id="unlock" class="ghost hidden">Unlock</button>
+      </div>
+      <h3>Permissions</h3>
+      <ul id="perms" class="rows"></ul>
+      <h3>Activity</h3>
+      <ul id="audit" class="rows small"></ul>
+    </section>
+
+    <nav class="tabs" id="tabs">
+      <button data-view="main" class="on">JARVIS</button>
+      <button data-view="clockapp">Clock</button>
+      <button data-view="security">Security <span id="badge" class="badge hidden">0</span></button>
+    </nav>
+
+    <!-- Permission prompt (Android style) -->
+    <div id="perm" class="scrim hidden" role="dialog" aria-modal="true" aria-labelledby="perm-title">
+      <div class="dialog">
+        <div class="perm-icon" id="perm-icon">◎</div>
+        <h2 id="perm-title">Allow JARVIS to …?</h2>
+        <p id="perm-why"></p>
+        <div class="stack">
+          <button data-mode="always" class="primary">Allow</button>
+          <button data-mode="once">Only this time</button>
+          <button data-mode="deny" class="ghost">Don't allow</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Approval sheet -->
+    <div id="appr" class="scrim sheet-scrim hidden" role="dialog" aria-modal="true" aria-labelledby="appr-title">
+      <div class="sheet">
+        <div class="grip"></div>
+        <h2 id="appr-title">Approve before JARVIS acts</h2>
+        <p id="appr-reason" class="reason"></p>
+        <pre id="appr-preview" class="preview"></pre>
+        <div id="appr-edit" class="edit hidden"></div>
+        <div class="row">
+          <button id="appr-no" class="ghost">Cancel</button>
+          <button id="appr-editbtn" class="ghost hidden">Edit</button>
+          <button id="appr-yes" class="primary"><span class="fill"></span><span id="appr-yes-label">Approve</span></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Overlays for simulated phone actions -->
+    <div id="toast" class="toast hidden" role="status"></div>
+    <div id="dialer" class="dialer hidden">
+      <p>Calling</p><h2 id="dial-name"></h2><p id="dial-num"></p>
+      <button id="dial-end" class="danger round" aria-label="End call">✕</button>
+    </div>
+  </div>
+  <aside class="caption" id="caption">Virtual phone. The Android app uses this same interface.</aside>
+</div>
+<script src="/static/phone.js" type="module"></script>
+</body>
+</html>

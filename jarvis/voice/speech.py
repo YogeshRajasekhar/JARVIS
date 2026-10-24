@@ -32,11 +32,13 @@ class GroqWhisperSTT:
     def __init__(self, api_key: str, model: str = "whisper-large-v3-turbo"):
         self.api_key, self.model = api_key, model
 
-    def transcribe(self, audio: bytes, filename: str = "audio.webm") -> str:
+    def transcribe(self, audio: bytes, filename: str = "audio.webm", prompt: Optional[str] = None) -> str:
+        data = {"model": self.model, "language": "en", "response_format": "json", "temperature": "0"}
+        if prompt:
+            data["prompt"] = prompt[:800]  # biases spelling of names and jargon
         r = httpx.post("https://api.groq.com/openai/v1/audio/transcriptions",
                        headers={"Authorization": f"Bearer {self.api_key}"},
-                       data={"model": self.model, "language": "en", "response_format": "json"},
-                       files={"file": (filename, audio)}, timeout=60)
+                       data=data, files={"file": (filename, audio)}, timeout=60)
         if r.status_code >= 400:
             raise STTUnavailable(f"Groq STT HTTP {r.status_code}")
         return r.json().get("text", "").strip()
@@ -50,9 +52,19 @@ class LocalWhisperSTT:
 
         self.model = WhisperModel(model, device="cpu", compute_type="int8")
 
-    def transcribe(self, audio: bytes, filename: str = "audio.wav") -> str:
-        segments, _ = self.model.transcribe(io.BytesIO(audio), language="en", vad_filter=True)
+    def transcribe(self, audio: bytes, filename: str = "audio.wav", prompt: Optional[str] = None) -> str:
+        segments, _ = self.model.transcribe(io.BytesIO(audio), language="en", vad_filter=True, initial_prompt=prompt)
         return " ".join(s.text.strip() for s in segments).strip()
+
+
+def vocabulary_prompt(user_name: str, names: list[str]) -> str:
+    """
+    Whisper treats the prompt as preceding text, so a short sentence containing the words we
+    expect makes it spell them correctly ("Kavya", "IIT Madras", "JARVIS") across accents.
+    """
+    words = ", ".join(dict.fromkeys(n for n in names if n and len(n) < 40))
+    return (f"Hey JARVIS, this is {user_name}. Calendar, meeting, remind me, email, Slack, GitHub, alarm. "
+            f"{words}.")[:800]
 
 
 def build_stt(settings) -> Optional[object]:

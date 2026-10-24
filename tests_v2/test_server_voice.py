@@ -156,3 +156,32 @@ def test_server_tts(tmp_path):
     c = TestClient(make_app(tmp_path))
     r = c.post("/api/tts", json={"text": "Good morning, Yogesh."}, headers=H)
     assert r.status_code == 200 and r.content[:4] == b"RIFF" and len(r.content) > 10000
+
+
+def test_stt_uses_vocabulary_prompt(tmp_path, monkeypatch):
+    """Whisper gets a prompt with known names so accents don't mangle them."""
+    import jarvis.voice.speech as speech
+    seen = {}
+
+    class FakeWhisper:
+        def transcribe(self, audio, filename, prompt=None):
+            seen.update(audio=audio, filename=filename, prompt=prompt)
+            return "what's my battery"
+
+    monkeypatch.setattr(speech, "build_stt", lambda settings: FakeWhisper())
+    app = make_app(tmp_path)
+    app.state.svc.graph.ensure_entity("Kavya", "person")
+    r = TestClient(app).post("/api/stt", content=b"\x1aE\xdf\xa3fake", headers={**H, "Content-Type": "audio/webm;codecs=opus"})
+    assert r.json() == {"text": "what's my battery"}
+    assert "Kavya" in seen["prompt"] and "JARVIS" in seen["prompt"] and seen["filename"] == "audio.webm"
+
+
+def test_stt_failure_is_clean(tmp_path, monkeypatch):
+    import jarvis.voice.speech as speech
+
+    class Broken:
+        def transcribe(self, *a, **k):
+            raise RuntimeError("groq down")
+
+    monkeypatch.setattr(speech, "build_stt", lambda settings: Broken())
+    assert TestClient(make_app(tmp_path)).post("/api/stt", content=b"x", headers=H).status_code == 502

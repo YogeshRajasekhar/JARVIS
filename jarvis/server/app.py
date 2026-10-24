@@ -240,7 +240,8 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
     async def status():
         return {"integrations": svc.integration_modes, "graph": svc.graph.stats(), "phone_connected": bridge.connected,
                 "llm_fast": [p.name for p in svc.fast_llm.providers], "llm_last": svc.fast_llm.last_provider,
-                "wake_word": wake_factory is not None, "user": settings.user_name}
+                "wake_word": wake_factory is not None, "user": settings.user_name,
+                "server_stt": bool(settings.groq_api_key) and settings.llm_mode != "offline"}
 
     @app.post("/api/tts", dependencies=[Depends(auth)])
     async def tts(m: MessageIn):
@@ -260,7 +261,16 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
         engine = await asyncio.to_thread(build_stt, settings)
         if engine is None:
             raise HTTPException(503, "no server STT configured; the phone transcribes locally")
-        text = await asyncio.to_thread(engine.transcribe, audio, request.headers.get("x-filename", "audio.webm"))
+        from jarvis.voice.speech import vocabulary_prompt
+        names = [n["label"] for t in ("person", "project", "place") for n in svc.graph.by_type(t)]
+        prompt = vocabulary_prompt(settings.user_name, names[:60])
+        ctype = request.headers.get("content-type", "")
+        ext = "mp4" if "mp4" in ctype else "ogg" if "ogg" in ctype else "wav" if "wav" in ctype else "webm"
+        try:
+            text = await asyncio.to_thread(engine.transcribe, audio, f"audio.{ext}", prompt)
+        except Exception as e:
+            log.warning("stt failed: %s", e)
+            raise HTTPException(502, "transcription failed")
         return {"text": text}
 
     # ------------------------------------------------------------------ WebSocket (the phone's live channel)

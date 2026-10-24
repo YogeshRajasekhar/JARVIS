@@ -172,3 +172,33 @@ def test_wake_word_from_microphone(page):
     pg.wait_for_function("(window.__wakes || 0) >= 1", timeout=15000)
     pg.screenshot(path=os.path.join(ART, "5_wake.png"))
     pg.click("#wake-toggle")
+
+
+def test_whisper_voice_input_records_until_silence(page, server):
+    """Mic -> record until the speaker stops -> server Whisper -> answer. Fake mic plays 'hey jarvis'."""
+    import jarvis.voice.speech as speech
+    calls = []
+
+    class FakeWhisper:
+        def transcribe(self, audio, filename, prompt=None):
+            calls.append(len(audio))
+            return "what's my battery"
+
+    speech_build = speech.build_stt
+    speech.build_stt = lambda settings: FakeWhisper()
+    try:
+        pg = page
+        pg.reload()
+        pg.wait_for_selector("#state:has-text('Ready')", timeout=10000)
+        pg.evaluate("window.__jarvis.speakOff()")
+        pg.evaluate("window.__jarvis.setStt('whisper', true)")
+        n = pg.locator("#log li.jarvis").count()
+        pg.click("#mic")
+        try:
+            pg.wait_for_function(f"document.querySelectorAll('#log li.jarvis').length > {n}", timeout=20000)
+        except Exception:
+            raise AssertionError("no reply; last notes: " + " | ".join(pg.locator("#log li.note").all_inner_texts()[-3:]))
+        assert calls and calls[0] > 1000          # real recorded audio reached the server
+        assert pg.locator("#log li.you").last.inner_text() == "what's my battery"
+    finally:
+        speech.build_stt = speech_build

@@ -160,9 +160,15 @@ async function speak(text) {
 // ------------------------------------------------------------------ speech in (free: Android SpeechRecognizer / Web Speech API)
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 let rec = null, listening = false;
+// Speech engine: "whisper" (server, Groq Whisper; much better with Indian accents) or "phone".
+let sttMode = store.get("jarvis_stt") || "whisper";
+let serverStt = false;  // set from /api/status at start
+let stopRecording = null;
+
 async function listen() {
   if (listening) return;
   speechSynthesis?.cancel?.();
+  if (sttMode === "whisper" && serverStt) return recordForServer();
   if (Native?.listen) {
     listening = true; setState("listening"); $("mic").classList.add("live");
     let r = null, failed = null;
@@ -191,24 +197,57 @@ async function listen() {
   rec.onerror = () => {};
   listening = true; $("mic").classList.add("live"); setState("listening");
   rec.start();
+  // Some browsers never fire onend if recognition stalls; never leave the mic stuck "on".
+  setTimeout(() => { if (listening && rec) { try { rec.abort(); } catch {} listening = false; $("mic").classList.remove("live"); setState("idle"); } }, 15000);
 }
-async function recordForServer() { // no usable on-phone recognizer: record 5 s, transcribe on the server
+async function recordForServer() {
+  // Records until you stop talking (or tap the mic), then transcribes on your server with Whisper.
+  await Native?.pauseWake?.();
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
-  catch { note("Microphone access was blocked. Allow it for JARVIS and try again."); return; }
-  const mr = new MediaRecorder(stream); const chunks = [];
-  mr.ondataavailable = (e) => chunks.push(e.data);
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
+  catch { note("Microphone access was blocked. Allow it for JARVIS and try again."); Native?.resumeWake?.(); return; }
+  const actx = new AudioContext();
+  const an = actx.createAnalyser(); an.fftSize = 1024;
+  actx.createMediaStreamSource(stream).connect(an);
+  const buf = new Float32Array(an.fftSize);
+  const mime = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((t) => window.MediaRecorder?.isTypeSupported?.(t)) || "";
+  const mr = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks = [];
+  mr.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
   listening = true; setState("listening"); $("mic").classList.add("live");
-  mr.start(); setTimeout(() => mr.stop(), 5000);
+  let heard = false, noise = 0.01;   // running estimate of background level
+  const t0 = performance.now(); let lastLoud = t0;
+  const finish = () => { if (mr.state === "recording") mr.stop(); };
+  stopRecording = finish;
+  const timer = setInterval(() => {
+    an.getFloatTimeDomainData(buf);
+    let sum = 0; for (const v of buf) sum += v * v;
+    const rms = Math.sqrt(sum / buf.length), now = performance.now();
+    orb.level(rms * 10);
+    // Background level follows the quietest moments (fast down, slow up), so starting to speak
+    // immediately doesn't get mistaken for noise.
+    noise = rms < noise ? rms : noise * 0.995 + rms * 0.005;
+    if (rms > Math.max(0.012, noise * 3)) { heard = true; lastLoud = now; }
+    if ((heard && now - lastLoud > 1300) || now - t0 > 15000 || (!heard && now - t0 > 7000)) finish();
+  }, 50);
+  mr.start(250);
   mr.onstop = async () => {
-    stream.getTracks().forEach((t) => t.stop());
-    listening = false; $("mic").classList.remove("live"); setState("thinking");
-    const r = await api("/api/stt", { method: "POST", body: new Blob(chunks, { type: mr.mimeType || "audio/webm" }), raw: true });
-    setState("idle");
-    if (r?.text) send(r.text, "voice"); else note("Server transcription isn't available (it needs a Groq key). Type instead.");
+    clearInterval(timer); stopRecording = null;
+    stream.getTracks().forEach((t) => t.stop()); actx.close();
+    listening = false; $("mic").classList.remove("live");
+    if (!heard) { setState("idle"); Native?.resumeWake?.(); note("I didn't hear anything. Tap the mic and speak."); return; }
+    setState("thinking");
+    const r = await api("/api/stt", { method: "POST", body: new Blob(chunks, { type: mr.mimeType || "audio/webm" }), raw: true }).catch(() => null);
+    setState("idle"); Native?.resumeWake?.();
+    if (r?.text?.trim()) send(r.text, "voice");
+    else note("Transcription failed. Check the server's Groq key, or switch voice input to the phone in Settings.");
   };
 }
-$("mic").onclick = () => (listening && rec ? rec.stop() : listen());
+$("mic").onclick = () => {
+  if (listening && stopRecording) return stopRecording();   // tap again to finish early
+  if (listening && rec) return rec.stop();
+  listen();
+};
 
 // ------------------------------------------------------------------ "Hey JARVIS" wake word
 let wakeCtx = null, wakeStream = null;
@@ -456,7 +495,15 @@ function renderClock() {
   rows("reminders", phone.reminders, (r) => { const li = el("li", "", r.label); li.append(el("span", "mode", new Date(r.at_iso).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }))); return li; });
   rows("smslog", phone.sms, (s) => { const li = el("li", "", s.text); li.append(el("span", "mode", s.name || s.number)); return li; });
 }
+function renderVoiceChoice() {
+  document.querySelectorAll("input[name=stt]").forEach((r) => {
+    r.checked = r.value === sttMode;
+    r.onchange = () => { sttMode = r.value; store.set("jarvis_stt", sttMode); };
+  });
+  $("stt-note").textContent = serverStt ? "" : "Whisper needs a Groq key on the server; until then the phone recognizer is used.";
+}
 async function loadSecurity() {
+  renderVoiceChoice();
   const p = await api("/api/permissions"); const a = await api("/api/audit");
   if (!p) return;
   $("unlock").classList.toggle("hidden", !p.locked);
@@ -489,10 +536,12 @@ function toast(text) { const t = $("toast"); t.textContent = text; t.classList.r
 function start() {
   $("pair").classList.add("hidden"); $("main").classList.remove("hidden"); $("tabs").classList.remove("hidden");
   setState("offline"); renderStatus(); renderClock();
-  note("Say Hey JARVIS, hold the mic, or type.");
+  note("Say Hey JARVIS, tap the mic, or type.");
+  api("/api/status").then((st) => { serverStt = !!st?.server_stt; }).catch(() => {});
   connect();
 }
 if (!IN_APP) $("server-field").classList.add("hidden");
 if (Native?.addListener) Native.addListener("level", (e) => orb.level(e.level || 0));
 secret.get().then((t) => { token = t; if (token && SERVER) start(); else $("tabs").classList.add("hidden"); });
-window.__jarvis = { send, phone, setWake, speakOff: () => (muted = true) }; // used by automated tests
+window.__jarvis = { send, phone, setWake, listen, speakOff: () => (muted = true),
+  setStt: (mode, available) => { sttMode = mode; serverStt = available; } }; // used by automated tests

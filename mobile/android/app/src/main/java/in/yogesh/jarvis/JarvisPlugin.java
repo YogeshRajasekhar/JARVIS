@@ -240,6 +240,12 @@ public class JarvisPlugin extends Plugin {
     }
 
     @PluginMethod
+    public void pauseWake(PluginCall call) {
+        wakeService(WakeWordService.ACTION_PAUSE);
+        call.resolve();
+    }
+
+    @PluginMethod
     public void resumeWake(PluginCall call) {
         wakeService(WakeWordService.ACTION_RESUME);
         call.resolve();

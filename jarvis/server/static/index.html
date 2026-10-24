@@ -72,7 +72,16 @@
 
     <!-- Security -->
     <section id="security" class="view panel hidden">
-      <h2>Security</h2>
+      <h2>Settings</h2>
+      <h3>Voice input</h3>
+      <div class="choices" role="radiogroup" aria-label="Voice input">
+        <label class="choice"><input type="radio" name="stt" value="whisper">
+          <span>Whisper on your server<span class="sub">Best with Indian English and names. Needs internet.</span></span></label>
+        <label class="choice"><input type="radio" name="stt" value="phone">
+          <span>Phone recognizer<span class="sub">Faster, can work offline, weaker with accents.</span></span></label>
+        <p id="stt-note" class="sub"></p>
+      </div>
+      <h3>Security</h3>
       <div class="lock">
         <button id="lockdown" class="danger">Lock down JARVIS</button>
         <p>Revokes every permission and cancels everything waiting for approval.</p>
@@ -87,7 +96,7 @@
     <nav class="tabs" id="tabs">
       <button data-view="main" class="on">JARVIS</button>
       <button data-view="clockapp">Clock</button>
-      <button data-view="security">Security <span id="badge" class="badge hidden">0</span></button>
+      <button data-view="security">Settings <span id="badge" class="badge hidden">0</span></button>
     </nav>
 
     <!-- Permission prompt (Android style) -->

@@ -110,6 +110,12 @@ button { cursor: pointer; }
 .mode.always { color: var(--ok); }
 .lock p { color: var(--muted); font-size: 13px; margin: 8px 0 0; }
 
+.choices { display: grid; gap: 8px; }
+.choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px; border: 1px solid var(--line); border-radius: 14px; cursor: pointer; }
+.choice:has(input:checked) { border-color: var(--amber); }
+.choice input { accent-color: var(--amber); margin-top: 4px; }
+.choice .sub, .choices > .sub { display: block; color: var(--muted); font-size: 12.5px; margin: 0; }
+
 /* ---------- buttons ---------- */
 .primary, .ghost, .danger, .stack button, .row button { border-radius: 999px; padding: 12px 18px; border: 1px solid transparent; }
 .primary { background: var(--amber); color: #2a1a03; font-weight: 600; position: relative; overflow: hidden; }

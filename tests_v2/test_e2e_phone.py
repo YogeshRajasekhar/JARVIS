@@ -231,3 +231,22 @@ def test_works_without_browser_speech_apis(server, page):
         notes = " ".join(pg.locator("#log li.note").all_inner_texts())
         assert errors == [] and "Something went wrong" not in notes, (errors, notes)
         ctx.close()
+
+
+def test_reconnect_does_not_crash(server, page):
+    """Network drop + typing during reconnect: no 'Still in CONNECTING state' crash, message still answered."""
+    pg = page
+    pg.reload()
+    pg.wait_for_selector("#state:has-text('Ready')", timeout=10000)
+    pg.evaluate("window.__jarvis.speakOff()")
+    before = len(pg.errors)
+    pg.evaluate("window.__jarvis.dropConnection()")                     # like the app being backgrounded
+    pg.wait_for_selector("#state:has-text('Reconnecting')", timeout=10000)
+    pg.evaluate("document.dispatchEvent(new Event('visibilitychange'))")  # app comes back: reconnect now
+    n = pg.locator("#log li.jarvis").count()
+    pg.fill("#text", "hello")        # sent while the new socket is still CONNECTING
+    pg.press("#text", "Enter")
+    pg.wait_for_function(f"document.querySelectorAll('#log li.jarvis').length > {n}", timeout=10000)
+    pg.wait_for_selector("#state:has-text('Ready')", timeout=15000)
+    notes = " ".join(pg.locator("#log li.note").all_inner_texts())
+    assert pg.errors[before:] == [] and "CONNECTING" not in notes, (pg.errors[before:], notes)

@@ -287,7 +287,7 @@ async function setWake(on) {
     const src = wakeCtx.createMediaStreamSource(wakeStream);
     const node = new AudioWorkletNode(wakeCtx, "pcm-worklet");
     node.port.onmessage = (e) => {
-      if (wsReady && !listening) ws.send(e.data);
+      if (!listening) wsSend(e.data);
       const a = new Int16Array(e.data); let s = 0; for (let i = 0; i < a.length; i += 8) s += Math.abs(a[i]);
       if (listening) orb.level(s / (a.length / 8) / 6000);
     };
@@ -318,30 +318,51 @@ async function api(path, { method = "GET", body, raw = false } = {}) {
   return r.ok ? r.json() : null;
 }
 
+// One live socket at a time. Every handler is bound to ITS socket, so a late event from an
+// old socket (after the app was backgrounded, or the network switched) can't touch the new one.
+let reconnectTimer = null;
+function wsOpen() { return !!ws && ws.readyState === WebSocket.OPEN && wsReady; }
+function wsSend(msg) {
+  if (!wsOpen()) return false;
+  try { ws.send(typeof msg === "string" || msg instanceof ArrayBuffer ? msg : JSON.stringify(msg)); return true; }
+  catch { return false; }
+}
 function connect() {
-  const url = SERVER.replace(/^http/, "ws") + "/ws";
-  ws = new WebSocket(url);
-  ws.binaryType = "arraybuffer";
-  ws.onopen = () => ws.send(JSON.stringify({ type: "auth", token, device: true }));
-  ws.onmessage = async (ev) => {
+  if (!token) return;
+  if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) return;
+  clearTimeout(reconnectTimer);
+  const sock = new WebSocket(SERVER.replace(/^http/, "ws") + "/ws");
+  ws = sock; wsReady = false;
+  sock.binaryType = "arraybuffer";
+  sock.onopen = () => { if (ws === sock) sock.send(JSON.stringify({ type: "auth", token, device: true })); };
+  sock.onmessage = async (ev) => {
+    if (ws !== sock) return;
     const m = JSON.parse(ev.data);
     if (m.type === "hello") { wsReady = true; retry = 0; setState("idle"); showRequests(m.pending || []); if (store.get("jarvis_wake") === "1") setWake(true); }
     else if (m.type === "error") unpair("The pairing token was rejected. Pair again.");
     else if (m.type === "reply") onReply(m);
-    else if (m.type === "device_command") ws.send(JSON.stringify({ type: "device_result", id: m.id, result: await runDevice(m.command, m.args) }));
+    else if (m.type === "device_command") {
+      const result = await runDevice(m.command, m.args);
+      if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ type: "device_result", id: m.id, result }));
+    }
     else if (m.type === "wake") onWake();
     else if (m.type === "notify") { toast(m.text); if (m.speak) speak(m.text); }
   };
-  ws.onclose = (e) => {
-    wsReady = false;
+  sock.onclose = (e) => {
+    if (ws !== sock) return;           // an old socket closing: ignore
+    wsReady = false; ws = null;
     if (e.code === 4401) return;
     setState("offline");
-    setTimeout(connect, Math.min(15000, 1000 * 2 ** retry++));
+    reconnectTimer = setTimeout(connect, Math.min(15000, 1000 * 2 ** retry++));
   };
 }
+// Back from background / network changed: reconnect right away instead of waiting.
+document.addEventListener("visibilitychange", () => { if (!document.hidden && token && !wsOpen()) { retry = 0; connect(); } });
+window.addEventListener("online", () => { if (token && !wsOpen()) { retry = 0; connect(); } });
 
 function unpair(msg) {
-  secret.del(); token = null; ws?.close();
+  secret.del(); token = null; started = false;
+  const old = ws; ws = null; wsReady = false; old?.close();
   $("main").classList.add("hidden"); $("tabs").classList.add("hidden"); $("pair").classList.remove("hidden");
   $("pair-err").textContent = msg || "";
 }
@@ -367,8 +388,7 @@ function send(text, source = "text") {
   text = text.trim(); if (!text) return;
   addLine("you", text);
   setState("thinking");
-  if (wsReady) ws.send(JSON.stringify({ type: "message", text, source }));
-  else api("/api/message", { method: "POST", body: { text, source } }).then((r) => r && onReply(r));
+  if (!wsSend({ type: "message", text, source })) api("/api/message", { method: "POST", body: { text, source } }).then((r) => r && onReply(r));
 }
 $("composer").onsubmit = (e) => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
 
@@ -454,8 +474,7 @@ $("perm").querySelectorAll("button[data-mode]").forEach((b) => (b.onclick = () =
 }));
 
 function decide(wsMsg, path, body) {
-  if (wsReady) ws.send(JSON.stringify(wsMsg));
-  else api(path, { method: "POST", body }).then((r) => r && onReply(r));
+  if (!wsSend(wsMsg)) api(path, { method: "POST", body }).then((r) => r && onReply(r));
 }
 
 let editing = false;
@@ -572,7 +591,10 @@ window.addEventListener("error", (e) => reportError(e.message));
 window.addEventListener("unhandledrejection", (e) => reportError(e.reason?.message || e.reason));
 
 // ------------------------------------------------------------------ boot
+let started = false;
 function start() {
+  if (started) { connect(); return; }
+  started = true;
   $("pair").classList.add("hidden"); $("main").classList.remove("hidden"); $("tabs").classList.remove("hidden");
   setState("offline"); renderStatus(); renderClock();
   note("Say Hey JARVIS, tap the mic, or type.");
@@ -583,4 +605,5 @@ if (!IN_APP) $("server-field").classList.add("hidden");
 if (Native?.addListener) Native.addListener("level", (e) => orb.level(e.level || 0));
 secret.get().then((t) => { token = t; if (token && SERVER) start(); else $("tabs").classList.add("hidden"); });
 window.__jarvis = { send, phone, setWake, listen, speakOff: () => (muted = true),
-  setStt: (mode, available) => { sttMode = mode; serverStt = available; } }; // used by automated tests
+  setStt: (mode, available) => { sttMode = mode; serverStt = available; },
+  dropConnection: () => ws?.close() }; // used by automated tests

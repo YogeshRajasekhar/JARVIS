@@ -1,5 +1,26 @@
 # JARVIS v2 - Build Plan (personal, voice-first, phone-controlling assistant)
 
+## Status (24 Oct 2026)
+
+| Phase | State |
+|---|---|
+| 0 Plan + critique | Done (this doc) |
+| 1 Core (free-LLM chain, SQLite, permissions, approvals, redaction) | Done, tested |
+| 2 Agents (5 upgraded + 6 new) | Done, tested with the offline engine; real-model accuracy via `scripts/eval_llm.py` |
+| 3 Server + voice | Done; wake word verified on real audio (0.998 on "hey jarvis", 0.0 on other speech) |
+| 4 Virtual phone + end-to-end | Done; Chromium test drives the full UI, including the wake word through a fake microphone |
+| 5 Real integrations | Code done (Google, Slack, GitHub, OpenStreetMap); needs your accounts to go live |
+| 6 Android app | Code done; APK is built by GitHub Actions (this sandbox can't download the Android SDK) |
+| 7 Hardening | Security test suite done; provider eval and on-phone checks need your keys and phone |
+
+### What testing changed in the plan
+- Free models must never do date arithmetic: a deterministic parser now resolves every time phrase.
+- One "pending approval" slot (v1) breaks multi-step requests; replaced by an approval inbox with ids.
+- Re-running a whole multi-step request after a permission prompt could double-book; resume now re-runs only the step that was waiting.
+- Bare times mean different things for alarms (6:30 = morning) and meetings (4 = afternoon); handled per agent.
+- Voice "yes" with two pending items is ambiguous; JARVIS now lists them and asks for "approve all".
+- Demo data must never mix with real accounts; seeding is disabled when real providers are connected.
+
 Status of v1 (what exists in the repo today): Supervisor (LangGraph) + Scheduler + Memory (graph) +
 Planner + Guardrail, mocked calendar, Claude-backed LLM, CLI only, 126 tests passing.
 

@@ -1,0 +1,17 @@
+{
+  "name": "jarvis-mobile",
+  "version": "2.0.0",
+  "private": true,
+  "description": "JARVIS Android app: Capacitor shell around the same UI as the virtual phone, plus native wake word, speech, biometrics and device actions.",
+  "scripts": {
+    "build:web": "node scripts/build-web.mjs",
+    "sync": "npm run build:web && npx cap sync android"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0"
+  }
+}

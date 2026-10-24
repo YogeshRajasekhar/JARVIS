@@ -29,6 +29,10 @@
       <h1>Pair this phone with JARVIS</h1>
       <p>Paste the pairing token shown when the server started. It stays on this device.</p>
       <form id="pair-form">
+        <div id="server-field">
+          <label for="pair-server">Server address</label>
+          <input id="pair-server" type="url" placeholder="https://jarvis.your-tailnet.ts.net" autocomplete="off" spellcheck="false">
+        </div>
         <label for="pair-token">Pairing token</label>
         <input id="pair-token" autocomplete="off" spellcheck="false" required minlength="8">
         <button type="submit" class="primary">Pair</button>

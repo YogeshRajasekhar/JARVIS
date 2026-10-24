@@ -1,0 +1,20 @@
+# JARVIS v2 server. Python 3.11+.
+fastapi==0.162.0
+uvicorn[standard]==0.54.0
+httpx==0.28.1
+pydantic==2.13.5
+dateparser==1.4.3
+networkx==3.4.2
+langgraph==0.2.60
+python-dotenv==1.0.1
+cryptography==50.0.1
+numpy==2.5.3
+onnxruntime==1.29.0
+openwakeword==0.4.0
+anthropic==0.69.0          # only used if ANTHROPIC_API_KEY is set (v1 client)
+# Optional:
+# piper-tts==1.8.0         # server-side offline TTS (/api/tts)
+# faster-whisper           # server-side offline STT (/api/stt) when no Groq key
+# Dev / tests:
+pytest==8.3.4
+# playwright==1.63.0       # browser end-to-end test of the virtual phone

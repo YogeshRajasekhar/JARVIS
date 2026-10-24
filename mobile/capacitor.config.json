@@ -1,0 +1,14 @@
+{
+  "appId": "in.yogesh.jarvis",
+  "appName": "JARVIS",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true,
+    "webContentsDebuggingEnabled": false
+  },
+  "server": {
+    "androidScheme": "https",
+    "cleartext": false
+  }
+}

@@ -9,8 +9,15 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
   del(k) { try { localStorage.removeItem(k); } catch {} },
 };
-const SERVER = store.get("jarvis_server") || location.origin;
-let token = store.get("jarvis_token");
+const IN_APP = !!Native;
+let SERVER = store.get("jarvis_server") || (IN_APP ? "" : location.origin);
+let token = null;
+// The pairing token lives in Android Keystore-backed storage in the app, localStorage in the browser.
+const secret = {
+  async get() { if (Native?.secureGet) return (await Native.secureGet({ key: "jarvis_token" })).value; return store.get("jarvis_token"); },
+  async set(v) { if (Native?.secureSet) return Native.secureSet({ key: "jarvis_token", value: v }); store.set("jarvis_token", v); },
+  async del() { if (Native?.secureSet) return Native.secureSet({ key: "jarvis_token", value: null }); store.del("jarvis_token"); },
+};
 let ws = null, wsReady = false, retry = 0;
 
 // ------------------------------------------------------------------ orb (the one bold element)
@@ -158,7 +165,7 @@ async function listen() {
   speechSynthesis?.cancel?.();
   if (Native?.listen) {
     listening = true; setState("listening"); $("mic").classList.add("live");
-    try { const r = await Native.listen({ language: "en-IN" }); if (r?.text) send(r.text, "voice"); }
+    try { const r = await Native.listen({ language: "en-IN" }); if (r?.text) send(r.text, "voice"); else Native.resumeWake?.(); }
     finally { listening = false; $("mic").classList.remove("live"); setState("idle"); }
     return;
   }
@@ -261,7 +268,7 @@ function connect() {
 }
 
 function unpair(msg) {
-  store.del("jarvis_token"); token = null; ws?.close();
+  secret.del(); token = null; ws?.close();
   $("main").classList.add("hidden"); $("tabs").classList.add("hidden"); $("pair").classList.remove("hidden");
   $("pair-err").textContent = msg || "";
 }
@@ -269,9 +276,17 @@ function unpair(msg) {
 $("pair-form").onsubmit = async (e) => {
   e.preventDefault();
   token = $("pair-token").value.trim();
-  const ok = await fetch(SERVER + "/api/status", { headers: { Authorization: `Bearer ${token}` } });
+  const srv = $("pair-server").value.trim().replace(/\/+$/, "");
+  if (srv) {
+    if (!/^https:\/\//.test(srv) && !/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(srv)) { $("pair-err").textContent = "Use an https:// address so the connection is encrypted."; return; }
+    SERVER = srv;
+  }
+  if (!SERVER) { $("pair-err").textContent = "Enter the server address."; return; }
+  let ok;
+  try { ok = await fetch(SERVER + "/api/status", { headers: { Authorization: `Bearer ${token}` } }); }
+  catch { $("pair-err").textContent = "Can't reach the server. Check the address and your connection."; return; }
   if (!ok.ok) { $("pair-err").textContent = ok.status === 401 ? "That token doesn't match this server." : "Can't reach the server."; return; }
-  store.set("jarvis_token", token); start();
+  store.set("jarvis_server", SERVER); await secret.set(token); start();
 };
 
 // ------------------------------------------------------------------ conversation
@@ -466,5 +481,7 @@ function start() {
   note("Say Hey JARVIS, hold the mic, or type.");
   connect();
 }
-if (token) start(); else { $("tabs").classList.add("hidden"); }
+if (!IN_APP) $("server-field").classList.add("hidden");
+if (Native?.addListener) Native.addListener("level", (e) => orb.level(e.level || 0));
+secret.get().then((t) => { token = t; if (token && SERVER) start(); else $("tabs").classList.add("hidden"); });
 window.__jarvis = { send, phone, setWake, speakOff: () => (muted = true) }; // used by automated tests

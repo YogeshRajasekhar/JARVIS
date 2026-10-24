@@ -1,106 +1,95 @@
-# JARVIS-Style Multi-Agent Personal Assistant — Build Map
+# JARVIS - a personal, voice-first, multi-agent assistant
 
-## Status: all 7 planned modules built, 126 tests passing (2 live-API tests skip without a key)
-
-## What's real vs. mocked in this sandbox, and why
-
-I don't have network access to OpenAI, Sarvam, Google Calendar, Telegram, or a hosted Neo4j
-from this environment (only a fixed allowlist: Anthropic's API, GitHub, PyPI, npm). So the build
-is structured to be **honest about that boundary**:
-
-| Component | In this sandbox | In your real deployment |
-|---|---|---|
-| LLM backend | **Claude API** (real, tested — haiku tier for Scheduler/Memory/Router, sonnet tier for Planner) | Swap to GPT-4o-mini/GPT-4o/Ollama via one config value — `LLMClient` is provider-agnostic |
-| Graph memory | **networkx**, real and fully tested — not a mock | Optionally swap to Neo4j later; networkx is a legitimate real choice at personal scale, not just a stand-in |
-| Calendar | **Mock client**, same method signatures as the real Google Calendar API | Swap in real OAuth2 client — `CalendarClient` interface designed so this is a drop-in replacement |
-| Scheduler agent | **Real** — LLM intent parsing + Guardrail-gated create/update/delete + conflict detection | No change needed |
-| Memory agent | **Real** — LLM→structured-op translation (allow-listed), Guardrail-gated writes | No change needed |
-| Planner agent | **Real** — LLM plan decomposition (sonnet tier); interrupt/replan logic is pure local code, no LLM | No change needed |
-| Supervisor | **Real** — LangGraph `StateGraph` routing to Scheduler/Memory/Planner + a dedicated approval node | No change needed |
-| Guardrail | **Real**, fully local, no external dependency at all | No change needed — this was always meant to run local |
-| Telegram | **Not built** — out of scope for this pass; would slot in as a `CommunicationClient` interface + stub, same pattern as `CalendarClient` | Swap in real Bot API token |
-
-Everything with a real implementation has real tests that actually execute and assert on
-real behavior — nothing here is "trust me, it would work." The two live-API tests (one for
-the LLM client, one supervisor end-to-end test) are marked `@pytest.mark.integration` and are
-skipped automatically when `ANTHROPIC_API_KEY` isn't set, rather than failing.
-
-## Build order (why this order) — ✅ all complete
-
-1. ✅ **Guardrail** — zero external dependencies, purely local logic. Best first module: nothing
-   to mock, fastest to get a real green test suite, and it's the safety layer everything else
-   should be checked against from day one.
-2. ✅ **Memory (graph)** — also fully local (networkx). Foundational — Scheduler, Planner, and
-   the Memory Agent all read/write through this.
-3. ✅ **LLM client abstraction** — one real Claude-backed implementation, swappable interface,
-   with explicit per-agent cost tiering (haiku for structured/narrow tasks, sonnet for the
-   Planner's genuine multi-step reasoning).
-4. ✅ **Scheduler** — mocked Calendar client, real LLM-based intent parsing, Guardrail-gated
-   writes, and conflict detection on create.
-5. ✅ **Memory Agent (NL→query layer)** — real Claude calls translating natural language into
-   an allow-listed structured operation, executed deterministically against the graph store;
-   writes are Guardrail-gated the same way the Scheduler's are.
-6. ✅ **Planner/Replanner** — Plan-and-Execute loop, priority-based interrupt logic (pure,
-   deterministic, no LLM call for the interrupt decision itself).
-7. ✅ **Supervisor** — LangGraph `StateGraph` wiring everything above into one routed graph,
-   with a dedicated node for surfacing and resolving pending Guardrail approvals.
-8. ✅ **Integration test** — one scripted end-to-end scenario touching every agent
-   (`tests/test_integration_e2e.py`), asserting on state at each stage.
-9. *(Stretch, not built this pass)* Telegram integration, Reflection agent, fine-tuned
-   Communication agent, live hosting.
-
-## Directory structure
+Say "Hey JARVIS", talk or type, and JARVIS handles your calendar, email, Slack, GitHub,
+reminders, places and phone, using only free models and free services. It acts on your phone
+only through permissions you grant, and it never sends a message, cancels a meeting or forgets
+something without showing you exactly what it will do first.
 
 ```
-jarvis-assistant/
-├── README.md                  # this file
-├── requirements.txt
-├── .env.example                # where real API keys go
-├── main.py                     # interactive CLI entry point
-├── src/
-│   ├── llm/client.py           # provider-agnostic LLM wrapper (Claude-backed here)
-│   ├── memory/
-│   │   ├── models.py            # Person, Meeting, Task, Commitment node/edge types
-│   │   └── graph_store.py       # networkx-backed graph memory
-│   ├── integrations/
-│   │   └── calendar_client.py   # interface + mock impl (Google Calendar-shaped)
-│   ├── agents/
-│   │   ├── guardrail.py
-│   │   ├── scheduler.py
-│   │   ├── memory_agent.py
-│   │   └── planner.py
-│   └── supervisor.py            # LangGraph assembly
-├── tests/
-│   ├── conftest.py              # registers the `integration` pytest marker
-│   ├── test_guardrail.py
-│   ├── test_memory_graph.py
-│   ├── test_llm_client.py
-│   ├── test_calendar_client.py
-│   ├── test_scheduler.py
-│   ├── test_memory_agent.py
-│   ├── test_planner.py
-│   ├── test_supervisor.py
-│   └── test_integration_e2e.py
+ Phone app / virtual phone  ── wake word (on-device) ─ speech-to-text ─ text ─┐   ┌─ text-to-speech
+   permission prompts · approval cards · device actions                       │   │
+ ─────────────────────────────── TLS WebSocket + device token ────────────────┼───┼──────────────
+ Brain (LangGraph):  preprocess ─► split multi-intent ─► route (rules, then LLM) ─► agent ─► reply
+   agents: Scheduler · Communication · Memory · Device · GitHub · Places · Briefing · Planner · Chat
+   every side effect ─► Guardrail ─► Permission broker ─► Approval inbox ─► resource lock ─► audit
+ ──────────────────────────────────────────────────────────────────────────────────────────────
+ SQLite: knowledge graph · conversation history (full-text search) · approvals · grants · audit
 ```
 
-## How to run it
+## What's in this repo
+
+| Path | What it is |
+|---|---|
+| `jarvis/` | **v2**: the brain, 9 agents, permission broker, approval queue, storage, integrations, voice, server |
+| `jarvis/server/static/` | The phone UI. Runs as the **virtual phone** in a browser and, unchanged, inside the Android app |
+| `mobile/` | Android app (Capacitor shell + native Java plugin: wake word, speech, biometrics, device actions) |
+| `deploy/` | Free cloud deployment: Docker + Tailscale (private HTTPS, no open ports) on a free VM |
+| `scripts/` | Model download, Google sign-in, LLM provider evaluation, wake-word reference port |
+| `tests_v2/` | 146 tests: core, security, multi-agent scenarios, server, wake word, browser end-to-end |
+| `src/`, `tests/` | **v1** (resume version): Supervisor, Scheduler, Memory, Planner, Guardrail. Still passing, reused by v2 |
+| `docs/PLAN.md` | The plan, and the critique of it |
+| `docs/DEPLOY.md` | Step by step: free VM, Tailscale, API keys, Google/Slack/GitHub, installing the APK |
+
+## Run the virtual phone on your laptop (5 minutes)
 
 ```bash
-pip install -r requirements.txt
-cp .env.example .env            # fill in ANTHROPIC_API_KEY
-pytest tests/ -v                # run the full test suite (126 pass; 2 live-API tests
-                                 # skip automatically without a key)
-python main.py                  # interactive CLI to talk to the assistant
+pip install -r requirements-v2.txt
+python scripts/download_models.py          # "hey jarvis" wake-word models, ~3 MB
+cp .env.example .env                       # add GROQ_API_KEY (free) for real language understanding
+python -m jarvis.server                    # prints the pairing token
 ```
 
-## What "learning this before an interview" should look like
+Open http://127.0.0.1:8765 in Chrome, paste the token, then type, hold the mic, or switch on
+"Hey JARVIS". With no API key it runs in offline mode (rule engine), which handles direct
+commands; add a free Groq or Gemini key for everything else. The demo world (fake calendar,
+inbox, contacts) is clearly marked with `example.com` addresses.
 
-Every module's docstring explains the *why*, not just the what — the design rationale behind
-each significant choice (why the Guardrail isn't an LLM call, why `interrupt_and_replan` uses
-strict-greater-than for ties, why `GraphMemoryStore.neighbors()` only follows outgoing edges and
-what that means for how questions have to be phrased, why the LLM in both the Scheduler and
-Memory Agent only ever produces a small validated structured object rather than anything
-executed directly) is written into the code itself, not just this doc. Read the module
-docstrings first, then the tests — the tests are written to demonstrate *why* a design choice
-matters (most are named and commented around a specific failure mode they're proving doesn't
-happen), not just that the happy path works.
+Try:
+- "what's on my calendar today", "set up a meeting with Priya tomorrow at 11" (conflict, then pick a slot)
+- "schedule a sync with Arun tomorrow at 5pm and mail him the agenda" (two agents, two approvals)
+- "any unread mails?" (one email is a phishing/prompt-injection attempt; JARVIS flags and ignores it)
+- "remember that Kavya introduced me to Arjun", then "who introduced me to Arjun?"
+- "wake me up at 6:30", "read my notifications" (OTP and bank alerts are hidden), "open gpay" (refused)
+- "jarvis lockdown" (revokes everything; unlocking needs a tap and typing UNLOCK)
+
+## The agents
+
+| Agent | Does | Safety |
+|---|---|---|
+| Supervisor (brain) | Routes with a keyword fast path (most requests need no LLM call), falls back to the LLM router, splits multi-intent requests, asks one question when unsure, carries facts between steps | Serialises turns; low confidence asks instead of guessing |
+| Scheduler | List, check, create, move, cancel, find free slots; resolves clashes by offering the 3 nearest free slots that respect your preferences | Events with other people and all cancellations need approval |
+| Communication | Inbox summaries, search, drafts, replies (threaded), Slack read/post | Never sends without an approval card; unknown recipients need on-screen confirmation; email bodies are untrusted data |
+| Memory | Graph RAG over people, projects, tasks, commitments, places, preferences | Refuses passwords, OTPs, card/ID numbers; forgetting needs approval |
+| Device | Alarms, timers, reminders, open apps, call (dialer), SMS (composer), contacts, location, notifications, quick settings, battery | Payment/banking/password apps blocked; OTP/bank notifications hidden twice (phone and server) |
+| GitHub | Notifications, PRs, issues, CI status; create issues and comments | Writes need approval |
+| Places | Find places, travel time, fair meeting point, when to leave for your next event | Location needs permission |
+| Briefing | Day summary from sources you already allowed | Never triggers a burst of permission prompts |
+| Planner | Breaks goals into steps, orders them by urgency x importance (v1 logic), runs them through the other agents | Each step still goes through permissions and approvals |
+| Guardrail | Deterministic risk scoring (v1) plus v2 rules | Not an LLM, can't be talked out of its job |
+| Chat | The JARVIS persona for everything else | No tools at all |
+
+## Built for free, smaller models
+
+- Fallback chain: Groq, then Gemini, then OpenRouter, then optional Ollama, then the offline rule
+  engine. Rate-limited providers cool down automatically; identical calls are cached.
+- The model only extracts what you said ("tomorrow at 4"); code does dates, ids and permissions.
+- Every prompt follows one template: role, exact JSON shape, numbered rules, worked examples of the
+  confusing cases, and what to do when unsure (`jarvis/prompts.py`).
+- Pydantic validation with lenient fixes, then one repair round that shows the model its own error.
+- `python scripts/eval_llm.py` scores each provider you have keys for on JARVIS's real prompts.
+
+## Security, in short
+
+Permission broker with Android-style prompts and a hard deny-list; approval inbox that is
+idempotent, expiring and limited to editable fields; untrusted-content firebreak against prompt
+injection; redaction of OTPs, cards, Aadhaar/PAN, passwords and tokens before anything is stored or
+sent to an LLM; encrypted OAuth tokens; device-token auth with brute-force lockout; strict CSP;
+lockdown switch; full audit log. On the phone: on-device wake word, Keystore storage,
+`FLAG_SECURE`, HTTPS only, no SMS/call-log/storage/accessibility permissions. Details: `docs/PLAN.md` section 6.
+
+## Tests
+
+```bash
+pytest                              # v1 + v2 (272 tests); browser e2e runs if Playwright is installed
+python scripts/wakeword_reference.py tests_v2/data/hey_jarvis.wav   # verifies the Android wake-word port
+```

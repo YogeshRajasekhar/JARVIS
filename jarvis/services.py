@@ -285,7 +285,7 @@ def seed_demo(svc: Services) -> None:
             SlackMessage("jarvis-dev", "Kavya", "Wake word works great on my Pixel!", now - timedelta(hours=3)),
         ]
     g = svc.graph
-    if g.stats()["nodes"] <= 1:
+    if g.stats()["nodes"] <= 1 and isinstance(cal, MockCalendar):  # never seed fake people next to real accounts
         arun = g.ensure_entity("Arun Kumar", "person")
         g.set_attribute(arun, "email", "arun.demo@example.com")
         g.set_attribute(arun, "role", "labmate at INSPIRE Lab")

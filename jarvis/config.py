@@ -33,12 +33,13 @@ class Settings:
     ollama_url: str = field(default_factory=lambda: _env("OLLAMA_URL"))
 
     # Fast tier = routing / extraction. Smart tier = planning / conversation.
+    # "auto" (or a model that disappears) = ask the provider which models this key can use and pick the best.
     groq_fast_model: str = field(default_factory=lambda: _env("GROQ_FAST_MODEL", "llama-3.1-8b-instant"))
     groq_smart_model: str = field(default_factory=lambda: _env("GROQ_SMART_MODEL", "llama-3.3-70b-versatile"))
-    gemini_fast_model: str = field(default_factory=lambda: _env("GEMINI_FAST_MODEL", "gemini-2.5-flash-lite"))
-    gemini_smart_model: str = field(default_factory=lambda: _env("GEMINI_SMART_MODEL", "gemini-2.5-flash"))
+    gemini_fast_model: str = field(default_factory=lambda: _env("GEMINI_FAST_MODEL", "auto"))
+    gemini_smart_model: str = field(default_factory=lambda: _env("GEMINI_SMART_MODEL", "auto"))
     openrouter_model: str = field(
-        default_factory=lambda: _env("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+        default_factory=lambda: _env("OPENROUTER_MODEL", "auto")
     )
     ollama_model: str = field(default_factory=lambda: _env("OLLAMA_MODEL", "llama3.1:8b"))
 

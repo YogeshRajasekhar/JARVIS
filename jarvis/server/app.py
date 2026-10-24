@@ -239,7 +239,9 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
     @app.get("/api/status", dependencies=[Depends(auth)])
     async def status():
         return {"integrations": svc.integration_modes, "graph": svc.graph.stats(), "phone_connected": bridge.connected,
-                "llm_fast": [p.name for p in svc.fast_llm.providers], "llm_last": svc.fast_llm.last_provider,
+                "llm_fast": [p.name for p in svc.fast_llm.providers], "llm_smart": [p.name for p in svc.smart_llm.providers],
+                "llm_last": svc.fast_llm.last_provider,
+                "llm_errors": {**svc.fast_llm.last_errors, **svc.smart_llm.last_errors},
                 "wake_word": wake_factory is not None, "user": settings.user_name,
                 "server_stt": bool(settings.groq_api_key) and settings.llm_mode != "offline"}
 

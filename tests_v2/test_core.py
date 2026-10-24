@@ -278,3 +278,62 @@ def test_backup_rotation(tmp_path):
         (tmp_path / "backups" / f"jarvis-2020-01-0{i + 1}.db").write_text("x")
     db.backup(str(tmp_path / "backups"))
     assert len(list((tmp_path / "backups").iterdir())) == 7
+
+
+# ============================================================================ model auto-selection
+from jarvis.llm.providers import pick_model
+
+
+def test_pick_model_prefers_tier_and_skips_non_chat():
+    groq = ["whisper-large-v3", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "meta-llama/llama-guard-4-12b", "qwen/qwen3.8-27b"]
+    from jarvis.llm.providers import PREFS
+    assert pick_model(groq, PREFS["groq"]["smart"]) == "openai/gpt-oss-120b"
+    assert pick_model(groq, PREFS["groq"]["fast"]) == "openai/gpt-oss-20b"
+    gem = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.8-flash-preview-0901",
+           "gemini-3.5-flash-lite", "gemini-3.8-flash-image", "text-embedding-005", "gemma-4-27b-it"]
+    assert pick_model(gem, PREFS["gemini"]["smart"]) == "gemini-3.8-flash"        # newest stable, not image/preview
+    assert pick_model(gem, PREFS["gemini"]["fast"]) == "gemini-3.5-flash-lite"
+    assert pick_model(["whisper-large-v3"], PREFS["groq"]["fast"]) is None
+
+
+def test_retired_model_switches_automatically():
+    """Exactly what happened on the VM: configured model 404s -> list models -> retry with a usable one."""
+    seen = []
+
+    def h(req):
+        if req.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "llama-3.3-70b-versatile"}, {"id": "openai/gpt-oss-120b"},
+                                                      {"id": "whisper-large-v3"}]})
+        body = json.loads(req.content)
+        seen.append(body["model"])
+        if body["model"] == "llama-3.3-70b-versatile":
+            return httpx.Response(404, json={"error": {"message": "The model `llama-3.3-70b-versatile` does not exist or you do not have access to it.", "code": "model_not_found"}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "hi"}}]})
+
+    llm = OpenAICompatibleLLM("groq", "https://x/v1", "k", "llama-3.3-70b-versatile", transport=_transport(h),
+                              family="groq", tier="smart")
+    assert llm.complete("hello") == "hi"
+    assert seen == ["llama-3.3-70b-versatile", "openai/gpt-oss-120b"]
+    assert llm.name == "groq:openai/gpt-oss-120b"
+    assert llm.complete("again") == "hi" and seen[-1] == "openai/gpt-oss-120b"   # remembered
+
+
+def test_gemini_auto_discovers_model():
+    def h(req):
+        if req.method == "GET":
+            return httpx.Response(200, json={"models": [
+                {"name": "models/gemini-3.8-flash", "supportedGenerationMethods": ["generateContent"]},
+                {"name": "models/text-embedding-005", "supportedGenerationMethods": ["embedContent"]}]})
+        assert "gemini-3.8-flash:generateContent" in str(req.url)
+        return httpx.Response(200, json={"candidates": [{"content": {"parts": [{"text": "ok"}]}}]})
+
+    llm = GeminiLLM("KEY", "auto", transport=_transport(h), tier="smart")
+    assert llm.complete("q") == "ok" and llm.model == "gemini-3.8-flash"
+
+
+def test_offline_engine_explains_cloud_failure():
+    from jarvis.llm.rule_llm import RuleLLM
+    f = FallbackLLM([Flaky("groq", "down"), RuleLLM()])
+    out = f.complete("User: tell me about black holes", task="chat")
+    assert "can't reach my language models" in out
+    assert "groq" in f.last_errors

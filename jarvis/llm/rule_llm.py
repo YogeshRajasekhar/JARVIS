@@ -77,8 +77,10 @@ def _duration(text: str) -> int | None:
 
 class RuleLLM:
     name = "rule-offline"
+    is_offline_engine = True
 
-    def complete(self, prompt: str, system: str | None = None, *, task: str | None = None, **_kw) -> str:
+    def complete(self, prompt: str, system: str | None = None, *, task: str | None = None, **kw) -> str:
+        self._cloud_errors = kw.get("cloud_errors") or []
         handler = getattr(self, f"_t_{task}", None)
         if handler is None:
             return self._t_chat(prompt, system or "")
@@ -384,4 +386,8 @@ class RuleLLM:
             return "I can manage your calendar, read and draft mail and Slack messages, track people and commitments, set alarms and reminders, check GitHub, and work out travel times. Anything I send needs your approval first."
         if "how are you" in t:
             return "Running smoothly. Thanks for asking."
+        if getattr(self, "_cloud_errors", None):
+            why = "rate limits" if all("rate limited" in e or "cooling" in e for e in self._cloud_errors) else "an error on the server"
+            return (f"I can't reach my language models right now ({why}), so I can only handle direct commands "
+                    "like scheduling, reminders, mail drafts and phone actions. The server log has details.")
         return "I'm in offline mode right now, so I can only handle direct commands like scheduling, reminders, mail drafts and phone actions."

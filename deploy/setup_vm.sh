@@ -29,6 +29,7 @@ s = re.sub(r"^JARVIS_DATA_KEY=.*$", "JARVIS_DATA_KEY=" + base64.urlsafe_b64encod
 open(p, "w").write(s)
 PY
   chmod 600 .env
+  chown "${SUDO_USER:-ubuntu}": .env   # editable by you without sudo, unreadable by others
   echo "Created deploy/.env with a fresh device token and data key. Add your GROQ_API_KEY / GEMINI_API_KEY now."
 fi
 echo "Next: TS_AUTHKEY=tskey-auth-... docker compose up -d --build"

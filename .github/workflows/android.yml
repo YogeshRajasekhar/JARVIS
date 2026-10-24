@@ -25,9 +25,8 @@ jobs:
       - name: Install JS deps and copy the UI into the app
         working-directory: mobile
         run: |
-          npm install --no-audit --no-fund
-          npm run build:web
-          npx cap sync android
+          set -o pipefail
+          (npm install --no-audit --no-fund && npm run build:web && npx cap sync android) 2>&1 | tee ../build.log
 
       - name: Bundle the on-device wake-word models
         run: |
@@ -39,7 +38,18 @@ jobs:
 
       - name: Build debug APK
         working-directory: mobile/android
-        run: chmod +x gradlew && ./gradlew --no-daemon assembleDebug
+        run: |
+          set -o pipefail
+          chmod +x gradlew
+          ./gradlew --no-daemon assembleDebug 2>&1 | tee -a ../../build.log
+
+      - name: Report errors as annotations (readable without log access)
+        if: failure()
+        run: |
+          touch build.log
+          grep -nE "error:|ERROR|FAILURE|What went wrong|Could not|cannot find symbol|incompatible types|unreported exception" build.log | head -40 > errs.txt || true
+          [ -s errs.txt ] || tail -40 build.log > errs.txt
+          while IFS= read -r line; do echo "::error title=build::${line:0:900}"; done < errs.txt
 
       - uses: actions/upload-artifact@v4
         with:

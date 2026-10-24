@@ -165,9 +165,18 @@ async function listen() {
   speechSynthesis?.cancel?.();
   if (Native?.listen) {
     listening = true; setState("listening"); $("mic").classList.add("live");
-    try { const r = await Native.listen({ language: "en-IN" }); if (r?.text) send(r.text, "voice"); else Native.resumeWake?.(); }
+    let r = null, failed = null;
+    try { r = await Native.listen({ language: "en-IN" }); }
+    catch (e) { failed = String(e?.message || e); }
     finally { listening = false; $("mic").classList.remove("live"); setState("idle"); }
-    return;
+    if (r?.text) { send(r.text, "voice"); return; }
+    Native.resumeWake?.();
+    const err = failed || r?.error;
+    if (!err || err === "no_match" || err === "timeout") { note("I didn't catch that. Tap the mic and try again."); return; }
+    if (/permission/i.test(err)) { note("JARVIS needs the microphone. Allow it in Settings > Apps > JARVIS > Permissions."); return; }
+    // Phone recognizer missing or broken (common on some Samsung phones): record here, transcribe on the server.
+    note(`Phone speech recognition failed (${err}); using server transcription instead.`);
+    return recordForServer();
   }
   if (!SR) return recordForServer();
   rec = new SR();
@@ -183,8 +192,10 @@ async function listen() {
   listening = true; $("mic").classList.add("live"); setState("listening");
   rec.start();
 }
-async function recordForServer() { // browsers without Web Speech: record 5 s, transcribe on the server
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+async function recordForServer() { // no usable on-phone recognizer: record 5 s, transcribe on the server
+  let stream;
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); }
+  catch { note("Microphone access was blocked. Allow it for JARVIS and try again."); return; }
   const mr = new MediaRecorder(stream); const chunks = [];
   mr.ondataavailable = (e) => chunks.push(e.data);
   listening = true; setState("listening"); $("mic").classList.add("live");
@@ -192,9 +203,9 @@ async function recordForServer() { // browsers without Web Speech: record 5 s, t
   mr.onstop = async () => {
     stream.getTracks().forEach((t) => t.stop());
     listening = false; $("mic").classList.remove("live"); setState("thinking");
-    const r = await api("/api/stt", { method: "POST", body: new Blob(chunks), raw: true });
+    const r = await api("/api/stt", { method: "POST", body: new Blob(chunks, { type: mr.mimeType || "audio/webm" }), raw: true });
     setState("idle");
-    if (r?.text) send(r.text, "voice"); else note("Speech-to-text isn't available here. Type instead.");
+    if (r?.text) send(r.text, "voice"); else note("Server transcription isn't available (it needs a Groq key). Type instead.");
   };
 }
 $("mic").onclick = () => (listening && rec ? rec.stop() : listen());

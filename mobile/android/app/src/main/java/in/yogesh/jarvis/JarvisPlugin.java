@@ -159,16 +159,28 @@ public class JarvisPlugin extends Plugin {
         }
         wakeService(WakeWordService.ACTION_PAUSE);
         getActivity().runOnUiThread(() -> {
-            SpeechRecognizer sr = (Build.VERSION.SDK_INT >= 31 && SpeechRecognizer.isOnDeviceRecognitionAvailable(getContext()))
-                    ? SpeechRecognizer.createOnDeviceSpeechRecognizer(getContext())
-                    : SpeechRecognizer.createSpeechRecognizer(getContext());
+            if (!SpeechRecognizer.isRecognitionAvailable(getContext())) {
+                JSObject r = new JSObject();
+                r.put("text", "");
+                r.put("error", "no_recognizer");
+                call.resolve(r);
+                return;
+            }
+            // The phone's default recognizer (Google on most phones). It still works offline when the
+            // offline pack is installed. The dedicated on-device recognizer is NOT used: on many Samsung
+            // phones it exists but lacks the English (India) pack and fails.
+            SpeechRecognizer sr = SpeechRecognizer.createSpeechRecognizer(getContext());
             Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
                     .putExtra(RecognizerIntent.EXTRA_LANGUAGE, call.getString("language", "en-IN"))
-                    .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+                    .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, getContext().getPackageName())
+                    .putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
                     .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1);
             sr.setRecognitionListener(new RecognitionListener() {
+                private boolean finished = false;
                 private void done(String text, String err) {
+                    if (finished) return;
+                    finished = true;
                     JSObject r = new JSObject();
                     r.put("text", text == null ? "" : text);
                     if (err != null) r.put("error", err);
@@ -179,7 +191,7 @@ public class JarvisPlugin extends Plugin {
                     ArrayList<String> m = b.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION);
                     done(m != null && !m.isEmpty() ? m.get(0) : "", null);
                 }
-                @Override public void onError(int error) { done("", "speech error " + error); }
+                @Override public void onError(int error) { done("", speechError(error)); }
                 @Override public void onReadyForSpeech(Bundle b) { notifyListeners("listening", new JSObject()); }
                 @Override public void onRmsChanged(float rms) {
                     JSObject o = new JSObject(); o.put("level", Math.max(0, rms) / 10.0); notifyListeners("level", o);
@@ -192,6 +204,18 @@ public class JarvisPlugin extends Plugin {
             });
             sr.startListening(intent);
         });
+    }
+
+    private static String speechError(int code) {
+        switch (code) {
+            case SpeechRecognizer.ERROR_NO_MATCH: return "no_match";
+            case SpeechRecognizer.ERROR_SPEECH_TIMEOUT: return "timeout";
+            case SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS: return "permission";
+            case SpeechRecognizer.ERROR_NETWORK: case SpeechRecognizer.ERROR_NETWORK_TIMEOUT: return "network";
+            case SpeechRecognizer.ERROR_RECOGNIZER_BUSY: return "busy";
+            case 12: case 13: return "language";  // ERROR_LANGUAGE_NOT_SUPPORTED / ERROR_LANGUAGE_UNAVAILABLE
+            default: return "error_" + code;
+        }
     }
 
     @PermissionCallback

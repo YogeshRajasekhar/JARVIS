@@ -1142,3 +1142,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-23
 
 **Fact of the day:** Eating the heart of a male Partridge was the cure for impotence in ancient Babylon.
+
+## 2026-10-24
+
+**Advice of the day:** When you're at a concert or event, enjoy the moment, enjoy being there. Try leaving your camera in your pocket.

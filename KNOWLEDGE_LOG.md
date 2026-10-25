@@ -1162,3 +1162,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-24
 
 **Advice of the day:** A long walk alone with some time to think, can work wonders.
+
+## 2026-10-25
+
+**Fact of the day:** More bullets were fired in `Starship Troopers` than any other movie ever made.

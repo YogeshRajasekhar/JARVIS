@@ -1178,3 +1178,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-25
 
 **Fact of the day:** The characters Bert and Ernie on Sesame Street were named after Bert the cop and Ernie the taxi driver in Frank Capra`s "Its A Wonderful Life."
+
+## 2026-10-25
+
+**Fact of the day:** More people speak English in China than the United States.

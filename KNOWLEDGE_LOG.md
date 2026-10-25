@@ -1174,3 +1174,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-25
 
 **Fact of the day:** The cruise liner Queen Elizabeth II moves only six inches for each gallon of diesel that it burns.
+
+## 2026-10-25
+
+**Fact of the day:** The characters Bert and Ernie on Sesame Street were named after Bert the cop and Ernie the taxi driver in Frank Capra`s "Its A Wonderful Life."

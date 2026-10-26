@@ -73,6 +73,32 @@
     <!-- Security -->
     <section id="security" class="view panel hidden">
       <h2>Settings</h2>
+      <h3>Accounts</h3>
+      <ul id="accounts" class="rows"></ul>
+      <div id="g-setup" class="prov-form hidden">
+        <p class="sub"><b>One-time Google setup (about 5 minutes).</b> Google only lets your own server read your mail, so it needs its own sign-in key:</p>
+        <ol class="steps sub">
+          <li>Open <a href="https://console.cloud.google.com/projectcreate" data-ext>Google Cloud</a>, create a project called JARVIS.</li>
+          <li>Enable the <a href="https://console.cloud.google.com/apis/library/gmail.googleapis.com" data-ext>Gmail API</a> and the <a href="https://console.cloud.google.com/apis/library/calendar-json.googleapis.com" data-ext>Calendar API</a>.</li>
+          <li><a href="https://console.cloud.google.com/auth/overview" data-ext>Google Auth Platform</a>: Get started, app name JARVIS, audience External, your email. Then Audience: <b>Publish app</b> (otherwise Google signs you out every 7 days).</li>
+          <li>Clients: Create client, type <b>Web application</b>, add this under Authorized redirect URIs:
+            <code id="g-redirect" class="copy" title="Tap to copy"></code>
+            Create, then copy the client ID and secret here.</li>
+        </ol>
+        <label for="g-id">Client ID</label>
+        <input id="g-id" autocomplete="off" spellcheck="false" maxlength="200" placeholder="1234-abc.apps.googleusercontent.com">
+        <label for="g-secret">Client secret</label>
+        <input id="g-secret" type="password" autocomplete="off" spellcheck="false" maxlength="200">
+        <button id="g-save" type="button" class="primary">Save and sign in with Google</button>
+        <p class="sub">Google will say the app isn't verified, because it's yours. Tap Advanced, then Go to JARVIS, and tick every box.</p>
+      </div>
+      <div id="tok-setup" class="prov-form hidden">
+        <p id="tok-help" class="sub"></p>
+        <label for="tok-val" id="tok-label">Token</label>
+        <input id="tok-val" type="password" autocomplete="off" spellcheck="false" maxlength="300">
+        <button id="tok-save" type="button" class="primary">Check and connect</button>
+      </div>
+      <p id="acc-msg" class="sub" role="status"></p>
       <h3>Voice input</h3>
       <div class="choices" role="radiogroup" aria-label="Voice input">
         <label class="choice"><input type="radio" name="stt" value="whisper">
@@ -110,7 +136,13 @@
       <ul id="providers" class="rows"></ul>
       <form id="prov-form" class="prov-form" autocomplete="off">
         <label for="prov-type">Add a provider</label>
-        <select id="prov-type"></select>
+        <select id="prov-type">
+          <option value="openai">OpenAI</option><option value="anthropic">Anthropic (Claude)</option>
+          <option value="groq">Groq (free)</option><option value="gemini">Google Gemini (free)</option>
+          <option value="openrouter">OpenRouter</option><option value="mistral">Mistral</option>
+          <option value="deepseek">DeepSeek</option><option value="together">Together AI</option>
+          <option value="ollama">Ollama (your own machine)</option><option value="custom">Other OpenAI-compatible</option>
+        </select>
         <div id="prov-key-wrap">
           <label for="prov-key">API key</label>
           <input id="prov-key" type="password" autocomplete="off" spellcheck="false" inputmode="text" maxlength="400">

@@ -178,18 +178,55 @@ class KnowledgeGraph:
                 parts.append(f"{INVERSE_TEXT.get(e['relation'], e['relation'].replace('_', ' ') + ' (from)')} {other}")
         return ". ".join(parts)
 
+    _STOP = set("""a an the i me my mine you your yours we our is are was were be been am do does did have has had to of in
+        on at for with about from by and or but not what who whom whose where when why how which that this these those it its
+        he she they them his her their there here please tell know any anything something can could would should will shall
+        jarvis hey okay ok just also really very much many more most some all""".split())
+
+    def retrieve(self, text: str, k: int = 6) -> list[str]:
+        """
+        Graph RAG retrieval: score every entity by name/alias matches, words in its attributes and relations,
+        then add direct neighbours of strong hits. Returns short fact lines, best first.
+        Works on phrasing like "where does my sister study" (matches an attribute "relationship: sister").
+        """
+        words = [w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in self._STOP and len(w) > 1]
+        if not words:
+            return []
+        stems = {w.rstrip("s") for w in words}
+        scores: dict[str, float] = {}
+        for nid, d in self.g.nodes(data=True):
+            if nid == "self:me":
+                continue
+            label = d["label"].lower()
+            attrs = d.get("attributes", {})
+            alias = " ".join(a.lower() for a in attrs.get("aliases", []))
+            hay_attr = " ".join(f"{k} {v}" for k, v in attrs.items() if k != "aliases").lower()
+            rel_words = " ".join(e[2].get("type", "").replace("_", " ") for e in self.g.in_edges(nid, data=True))
+            sc = 0.0
+            for w in stems:
+                if re.search(rf"\b{re.escape(w)}", label) or re.search(rf"\b{re.escape(w)}", alias):
+                    sc += 3
+                elif re.search(rf"\b{re.escape(w)}", hay_attr):
+                    sc += 2
+                elif re.search(rf"\b{re.escape(w)}", rel_words):
+                    sc += 0.5
+            if sc:
+                scores[nid] = sc
+        for w in words:                               # fuzzy names ("Ananyaa", "Prof Ravi")
+            fuzzy = self.resolve(w) if len(w) > 3 else None
+            if fuzzy and fuzzy != "self:me" and fuzzy not in scores:
+                scores[fuzzy] = 2.5
+        top = sorted(scores, key=lambda n: -scores[n])[:k]
+        for nid in list(top[:3]):                     # include neighbours of the best hits
+            for e in self.edges_of(nid)[:4]:
+                o = e["other"]["id"] if e["other"] else None
+                if o and o not in top and o != "self:me" and len(top) < k + 3:
+                    top.append(o)
+        return [self.describe_node(n, max_edges=6) for n in top]
+
     def context_for(self, text: str, limit: int = 4) -> str:
-        """Graph-RAG context: short descriptions of entities mentioned in `text`."""
-        seen, lines = set(), []
-        words = re.findall(r"[A-Za-z][\w.]+(?:\s+[A-Z][\w.]+)?", text)
-        for w in words:
-            nid = self.resolve(w)
-            if nid and nid not in seen and nid != "self:me":
-                seen.add(nid)
-                lines.append(self.describe_node(nid, max_edges=5))
-            if len(lines) >= limit:
-                break
-        return "\n".join(lines)
+        """Short fact lines relevant to `text`, for agent prompts."""
+        return "\n".join(self.retrieve(text, k=limit))
 
     def stats(self) -> dict:
         return {"nodes": self.g.number_of_nodes(), "edges": self.g.number_of_edges()}

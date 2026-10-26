@@ -31,6 +31,9 @@ RULES: dict[str, list[tuple[str, float]]] = {
         (r"^remember\b|\bremember that\b|\bnote that\b|\bdon't forget that\b", 4),
         (r"\b(who is|who's|who introduced|what do (i|you) know about|tell me about)\b", 2.5),
         (r"\b(forget (about|everything))\b", 3), (r"\b(owe|promised|commitment)\b", 2), (r"\bmy (tasks|projects|preferences)\b", 2),
+        (r"\b(my|our) (sister|brother|mom|mother|dad|father|wife|husband|partner|girlfriend|boyfriend|friend|boss|manager|"
+         r"advisor|guide|professor|roommate|cousin|uncle|aunt|son|daughter|colleague|labmate|team)\b", 2.5),
+        (r"\b(do you remember|do you know|what('s| is) my|who('s| is) my|where does my|when is my \w+'s birthday)\b", 2.5),
     ],
     "github": [(r"\b(github|repo|repository|pull request|\bpr\b|prs|issue|issues|ci|build|workflow|commit)\b", 3)],
     "places": [
@@ -77,7 +80,11 @@ def score(text: str) -> dict[str, float]:
     if re.search(r"\b(mail|email|slack|text|sms)\b", t) and out.get("scheduler"):
         out["scheduler"] -= 1.5                          # "mail Arun about the meeting" is communication
     if "when is my" in t or "when's my" in t:
-        out["scheduler"] = out.get("scheduler", 0) + 3
+        if not re.search(r"birthday|anniversary", t):
+            out["scheduler"] = out.get("scheduler", 0) + 3
+    from jarvis.agents.memory import is_statement
+    if is_statement(text):
+        out["memory"] = out.get("memory", 0) + 4
     return {k: v for k, v in out.items() if v > 0}
 
 

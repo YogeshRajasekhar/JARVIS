@@ -288,7 +288,13 @@ def test_settings_add_model_provider(page, server, monkeypatch):
     pg.click("#about-save")
     pg.wait_for_selector("#about-msg:has-text('Saved')", timeout=5000)
     assert pg.locator("#voice option").count() >= 1
-    assert "Update" in pg.inner_text("#upd-info") or "update" in pg.inner_text("#upd-info") or "off" in pg.inner_text("#upd-info")
+    assert any(w in pg.inner_text("#upd-info").lower() for w in ("update", "off", "up to date"))
+    # Accounts: Google, Slack and GitHub rows; Connect opens the setup steps with the exact redirect URI.
+    pg.wait_for_selector("#accounts li:has-text('Google')", timeout=5000)
+    assert pg.locator("#accounts li").count() == 3
+    pg.locator("#accounts li:has-text('Google') button:has-text('Connect')").click()
+    assert pg.is_visible("#g-setup") and "/oauth/google/callback" in pg.inner_text("#g-redirect")
+    assert pg.locator("#prov-type option").count() >= 10
     pg.screenshot(path=os.path.join(ART, "7_settings.png"), full_page=True)
     assert pg.errors == [], pg.errors
     pg.click("#tabs button[data-view=main]")

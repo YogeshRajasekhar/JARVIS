@@ -137,6 +137,24 @@ public class JarvisPlugin extends Plugin {
     }
 
     // ------------------------------------------------------------------ morning call
+    /** Opens an https link in the real browser (Google refuses sign-in inside app web views). */
+    @PluginMethod
+    public void openUrl(PluginCall call) {
+        String url = call.getString("url", "");
+        Uri u = Uri.parse(url);
+        if (!"https".equals(u.getScheme()) || u.getHost() == null) { call.reject("Only https links can be opened."); return; }
+        String host = u.getHost();
+        if (!host.equals("accounts.google.com") && !host.endsWith(".ts.net") && !host.equals("api.slack.com")
+                && !host.equals("github.com") && !host.equals("console.cloud.google.com")) {
+            call.reject("JARVIS only opens sign-in and setup pages."); return;
+        }
+        Intent i = new Intent(Intent.ACTION_VIEW, u);
+        i.addCategory(Intent.CATEGORY_BROWSABLE);
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { getContext().startActivity(i); call.resolve(); }
+        catch (Exception e) { call.reject("No browser found."); }
+    }
+
     @PluginMethod
     public void scheduleBrief(PluginCall call) {
         boolean on = Boolean.TRUE.equals(call.getBoolean("enabled", false));

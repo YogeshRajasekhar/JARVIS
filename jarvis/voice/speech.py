@@ -120,7 +120,7 @@ def build_stt(settings, registry=None) -> Optional[object]:
 
 
 class PiperTTS:
-    """Offline neural TTS. Voice files: scripts/download_models.py --voice."""
+    """Offline neural TTS (Piper). Voice files are fetched by scripts/download_models.py."""
 
     def __init__(self, voice_path: str):
         from piper import PiperVoice
@@ -129,14 +129,101 @@ class PiperTTS:
             raise FileNotFoundError(voice_path)
         self.voice = PiperVoice.load(voice_path)
 
-    def synthesize(self, text: str) -> bytes:
+    def pcm(self, text: str, length_scale: float = 1.0) -> tuple["np.ndarray", int]:
+        """Mono float32 samples in [-1, 1] and the sample rate."""
+        import numpy as np
         buf = io.BytesIO()
         with wave.open(buf, "wb") as w:
-            if hasattr(self.voice, "synthesize_wav"):
-                self.voice.synthesize_wav(text, w)
-            else:
-                self.voice.synthesize(text, w)
-        return buf.getvalue()
+            try:
+                from piper import SynthesisConfig
+                self.voice.synthesize_wav(text, w, syn_config=SynthesisConfig(length_scale=length_scale))
+            except (ImportError, TypeError):
+                (self.voice.synthesize_wav if hasattr(self.voice, "synthesize_wav") else self.voice.synthesize)(text, w)
+        buf.seek(0)
+        with wave.open(buf, "rb") as r:
+            rate, raw = r.getframerate(), r.readframes(r.getnframes())
+        return np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0, rate
+
+    def synthesize(self, text: str) -> bytes:
+        x, rate = self.pcm(text)
+        return to_wav(x, rate)
+
+
+def to_wav(x, rate: int) -> bytes:
+    import numpy as np
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1); w.setsampwidth(2); w.setframerate(rate)
+        w.writeframes((np.clip(x, -1, 1) * 32767).astype(np.int16).tobytes())
+    return buf.getvalue()
+
+
+def synthetic_colour(x, rate: int, pitch: float = 0.93):
+    """
+    JARVIS's own character: an original "calm synthetic assistant" treatment, not an imitation of any
+    actor. Slightly lower pitch, a faint doubled (chorus) layer, a small bright room, gentle presence lift.
+    The input should be synthesised `pitch` times faster, so duration ends up unchanged.
+    """
+    import numpy as np
+    if x.size < rate // 20:
+        return x
+    # 1. lower the pitch by resampling (stretches time back to normal speed)
+    n = int(len(x) / pitch)
+    y = np.interp(np.linspace(0, len(x) - 1, n), np.arange(len(x)), x).astype(np.float32)
+    # 2. chorus: a copy delayed 9-15 ms with a slow wobble, mixed low
+    t = np.arange(n)
+    d = (0.012 + 0.003 * np.sin(2 * np.pi * 0.6 * t / rate)) * rate
+    idx = np.clip(t - d, 0, n - 1)
+    y = 0.86 * y + 0.22 * np.interp(idx, t, y).astype(np.float32)
+    # 3. small room: a few short decaying reflections
+    out = y.copy()
+    for ms, g in ((23, 0.18), (37, 0.12), (53, 0.08), (79, 0.05)):
+        k = int(rate * ms / 1000)
+        out[k:] += g * y[:-k]
+    # 4. presence: add a little of the high band (first difference) for a crisp, "digital" edge
+    hi = np.concatenate([[0.0], np.diff(out)]).astype(np.float32)
+    out = out + 0.35 * hi
+    # 5. a soft ring-modulated shimmer, very low, for the synthetic sheen
+    out += 0.025 * out * np.sin(2 * np.pi * 42 * t / rate).astype(np.float32)
+    peak = float(np.max(np.abs(out))) or 1.0
+    return (out / peak * 0.89).astype(np.float32)
+
+
+VOICES = {
+    # id: (file, label, colour)
+    "jarvis": ("en_GB-alan-medium.onnx", "JARVIS (British, synthetic)", True),
+    "british": ("en_GB-alan-medium.onnx", "British male, natural", False),
+    "classic": ("en-us-lessac-low.onnx", "American, natural", False),
+}
+_tts_cache: dict = {}
+
+
+def available_voices(model_dir: str = "./models") -> list[dict]:
+    out = []
+    for vid, (f, label, _) in VOICES.items():
+        if os.path.exists(os.path.join(model_dir, f)):
+            out.append({"id": vid, "label": label})
+    if out and not any(v["id"] == "jarvis" for v in out) and os.path.exists(os.path.join(model_dir, VOICES["classic"][0])):
+        out.insert(0, {"id": "jarvis", "label": "JARVIS (synthetic)"})      # colour over the fallback voice
+    return out
+
+
+def speak(text: str, voice: str = "jarvis", model_dir: str = "./models") -> Optional[bytes]:
+    """WAV bytes for `text` in the chosen server voice, or None when no voice file is installed."""
+    f, _, colour = VOICES.get(voice, VOICES["jarvis"])
+    path = os.path.join(model_dir, f)
+    if not os.path.exists(path):
+        path = os.path.join(model_dir, VOICES["classic"][0])
+    if path not in _tts_cache:
+        try:
+            _tts_cache[path] = PiperTTS(path)
+        except Exception:
+            return None
+    eng = _tts_cache[path]
+    if not colour:
+        return eng.synthesize(text)
+    x, rate = eng.pcm(text, length_scale=0.93)
+    return to_wav(synthetic_colour(x, rate, 0.93), rate)
 
 
 def build_tts(model_dir: str = "./models") -> Optional[PiperTTS]:

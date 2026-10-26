@@ -12,7 +12,9 @@ RUN pip install --no-cache-dir -r requirements-v2.txt
 COPY src ./src
 COPY jarvis ./jarvis
 COPY scripts ./scripts
-RUN python scripts/download_models.py --dir /app/models
+# piper-tts is optional (server voice); the build continues without it.
+RUN (pip install --no-cache-dir piper-tts==1.8.0 && python scripts/download_models.py --dir /app/models --voice) \
+    || python scripts/download_models.py --dir /app/models
 
 # Run as an unprivileged user; the only writable place is /data (the volume).
 RUN useradd --create-home --uid 10001 jarvis && mkdir -p /data && chown jarvis /data

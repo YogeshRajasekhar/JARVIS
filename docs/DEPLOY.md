@@ -43,17 +43,22 @@ sudo docker compose logs jarvis | grep "Pairing token"
 
 The server is now at `https://jarvis.<your-tailnet>.ts.net` (shown in the Tailscale admin console).
 
-## 4. Connect your accounts (optional, 15 min)
+## 4. Connect your accounts (in the app)
 
-- Google Calendar + Gmail: follow the header of `scripts/google_auth.py` (create a Desktop OAuth
-  client, then run the script once). Scopes are limited to calendar events, read mail and send mail.
-  Then set `JARVIS_SEED_DEMO=0` and restart.
-- Slack: create an app at api.slack.com, add the user scopes listed in `.env.example`, install it
-  to your workspace and put the `xoxp-` token in `SLACK_USER_TOKEN`.
-- GitHub: create a fine-grained token (read: issues, pull requests, actions, notifications;
-  write: issues) and put it in `GITHUB_TOKEN`.
+Settings > Accounts. Nothing here needs the VM's terminal.
 
-Restart: `sudo docker compose restart jarvis`. `GET /api/status` shows which integrations are live.
+- Google (Gmail and Calendar): tap Connect and follow the 4 steps shown (create a free Google Cloud
+  project, enable two APIs, publish the consent screen, create a "Web application" client with the redirect
+  address the app shows). Paste the client ID and secret, then Google's own sign-in page opens in your
+  browser. Pick your account, tap Advanced > Go to JARVIS (it's your own unverified app), tick every box.
+  JARVIS switches to your real mail and calendar at once. Scopes: calendar events, read mail, send mail
+  (only after you approve each email), and your email address.
+- Slack: paste a user token (xoxp-...). The app lists the scopes to add.
+- GitHub: paste a fine-grained token (github_pat_...).
+
+Every token is tested with a real request, stored encrypted on the server, and never sent back to the phone.
+Disconnect any time from the same screen. If the redirect address shown is wrong, set
+`JARVIS_PUBLIC_URL=https://jarvis.<tailnet>.ts.net` in `deploy/.env` and restart.
 
 ## 5. The Android app (10 min)
 

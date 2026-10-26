@@ -147,6 +147,7 @@ async function speak(text) {
   const clean = text.replace(/https?:\/\/\S+/g, "the link").replace(/\S+@\S+\.\S+/g, (m) => m.split("@")[0]);
   setState("speaking");
   try {
+    if (serverVoice && await speakServer(clean)) return;
     if (Native?.speak) { await Native.speak({ text: clean }).catch(() => {}); return; }
     if (!("speechSynthesis" in window)) return;
     await new Promise((res) => {
@@ -157,6 +158,43 @@ async function speak(text) {
       setTimeout(res, 20000);
     });
   } finally { setState("idle"); }
+}
+
+// The JARVIS server voice (Piper, British, with a synthetic treatment). Falls back to the phone's voice.
+let serverVoice = store.get("jarvis_server_voice");     // null = never chosen: use the JARVIS voice if the server has it
+let playing = null;
+function ttsChunks(text) {
+  const parts = text.match(/[^.!?]+[.!?]*\s*/g) || [text];
+  const out = []; let cur = "";
+  for (const p of parts) { if ((cur + p).length > 420 && cur) { out.push(cur); cur = ""; } cur += p; }
+  if (cur.trim()) out.push(cur);
+  return out.slice(0, 6);
+}
+async function fetchTts(text) {
+  const ctl = new AbortController(); const t = setTimeout(() => ctl.abort(), 9000);
+  try {
+    const r = await fetch(SERVER + "/api/tts", { method: "POST", signal: ctl.signal,
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, body: JSON.stringify({ text, voice: serverVoice }) });
+    return r.ok ? await r.blob() : null;
+  } catch { return null; } finally { clearTimeout(t); }
+}
+async function speakServer(text) {
+  const chunks = ttsChunks(text);
+  let next = fetchTts(chunks[0]);
+  for (let i = 0; i < chunks.length; i++) {
+    const blob = await next;
+    if (!blob) return i > 0;                      // first chunk failed: let the phone voice speak instead
+    next = i + 1 < chunks.length ? fetchTts(chunks[i + 1]) : null;
+    const url = URL.createObjectURL(blob);
+    try {
+      await new Promise((res) => {
+        playing = new Audio(url); playing.onended = res; playing.onerror = res;
+        playing.play().catch(res); setTimeout(res, 30000);
+      });
+    } finally { URL.revokeObjectURL(url); playing = null; }
+    if (muted) break;
+  }
+  return true;
 }
 
 // ------------------------------------------------------------------ speech in (free: Android SpeechRecognizer / Web Speech API)
@@ -170,6 +208,7 @@ let stopRecording = null;
 async function listen() {
   if (listening) return;
   window.speechSynthesis?.cancel?.();   // absent in Android's WebView: must go through window
+  playing?.pause();
   if (sttMode === "whisper" && serverStt) return recordForServer();
   if (sttMode === "whisper" && !serverStt && !listen.warned) {
     listen.warned = true;
@@ -353,7 +392,7 @@ async function apiDetail(path, { method = "GET", body } = {}) {
   catch { return { ok: false, error: "Can't reach the server." }; }
   if (r.status === 401) { unpair("The pairing token was rejected. Pair again."); return { ok: false, error: "Not paired." }; }
   const data = await r.json().catch(() => ({}));
-  return r.ok ? { ok: true, data } : { ok: false, error: data?.detail || `Server error ${r.status}` };
+  return r.ok ? { ok: true, data } : { ok: false, status: r.status, error: data?.detail || `Server error ${r.status}` };
 }
 
 // One live socket at a time. Every handler is bound to ITS socket, so a late event from an
@@ -433,6 +472,7 @@ $("composer").onsubmit = (e) => { e.preventDefault(); const t = $("text").value;
 
 function onReply(m) {
   setState("idle");
+  if (m.understood) note(`Understood as: ${m.understood}`);
   const agents = [...new Set(m.agents || [])].filter((a) => a !== "router").join(" + ");
   addLine("jarvis", m.reply, agents, m.cards || []);
   speak(m.reply);
@@ -588,9 +628,11 @@ function renderModels(state) {
   serverStt = !!state.server_stt;
   renderVoiceChoice();
   const sel = $("prov-type");
-  if (!sel.options.length) {
-    for (const c of state.catalog) sel.append(new Option(c.label, c.type));
-    sel.value = "openai";
+  // The list ships in the page (works even if the server is old or unreachable); the server's catalog
+  // only adds entries and better labels.
+  for (const c of state.catalog || []) {
+    const o = [...sel.options].find((x) => x.value === c.type);
+    if (o) o.textContent = c.label; else sel.append(new Option(c.label, c.type));
   }
   updateProviderForm();
   const ul = $("providers"); ul.replaceChildren();
@@ -613,9 +655,10 @@ function renderModels(state) {
     ul.append(li);
   });
 }
+const BASE_NEEDED = new Set(["ollama", "custom"]);
 function updateProviderForm() {
-  const c = llmState?.catalog.find((x) => x.type === $("prov-type").value);
-  if (!c) return;
+  const t = $("prov-type").value;
+  const c = llmState?.catalog?.find((x) => x.type === t) || { needs_base: BASE_NEEDED.has(t), no_key: t === "ollama", help: "" };
   $("prov-base-wrap").classList.toggle("hidden", !c.needs_base);
   $("prov-key-wrap").classList.toggle("hidden", !!c.no_key);
   $("prov-help").textContent = c.help ? `Get a key: ${c.help}` : (c.no_key ? "No key needed. Enter the address where Ollama runs." : "");
@@ -623,9 +666,95 @@ function updateProviderForm() {
 $("prov-type").onchange = updateProviderForm;
 function modelsMsg(t, ok = false) { const m = $("prov-msg"); m.textContent = t; m.classList.toggle("ok", ok); }
 async function loadModels() {
+  updateProviderForm();
   const r = await apiDetail("/api/llm");
-  if (r.ok) renderModels(r.data); else modelsMsg(r.error);
+  if (r.ok) renderModels(r.data);
+  else modelsMsg(r.status === 404 ? "Your server is older than this app. Update it: git pull, then docker compose up -d --build."
+                                  : `Couldn't load model settings: ${r.error}`);
 }
+
+// ------------------------------------------------------------------ connected accounts (Settings)
+function openExternal(url) {
+  if (Native?.openUrl) return Native.openUrl({ url }).catch((e) => accMsg(e?.message || String(e)));
+  window.open(url, "_blank", "noopener");
+}
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-ext]"); if (!a) return;
+  e.preventDefault(); openExternal(a.href);
+});
+function accMsg(t, ok = false) { const m = $("acc-msg"); m.textContent = t; m.classList.toggle("ok", ok); }
+let accState = null, accPoll = null, tokKind = null;
+const TOKEN_HELP = {
+  slack: { label: "Slack user token (xoxp-...)", help: "At api.slack.com/apps: Create New App, From scratch. OAuth & Permissions: add user scopes channels:history, channels:read, chat:write, im:history, users:read. Install to Workspace, then copy the User OAuth Token." },
+  github: { label: "GitHub token (github_pat_...)", help: "At github.com/settings/personal-access-tokens: Generate new token (fine-grained), pick your repos, allow read on Actions, Issues, Pull requests and Metadata, and write on Issues." },
+};
+function renderAccounts(st) {
+  accState = st;
+  $("g-redirect").textContent = st.google.redirect_uri;
+  const ul = $("accounts"); ul.replaceChildren();
+  const row = (title, sub, actions) => {
+    const li = el("li", "prov"); const info = el("span", "");
+    info.append(el("span", "", title), el("span", "sub", sub));
+    const box = el("span", "prov-actions");
+    for (const [label, fn, cls] of actions) { const b = el("button", cls || "revoke", label); b.onclick = fn; box.append(b); }
+    li.append(info, box); ul.append(li);
+  };
+  const g = st.google;
+  row("Google (Gmail and Calendar)",
+      g.connected ? `Connected: ${g.email || "your account"}` : (g.last_error || (g.client_saved ? "Ready. Tap Connect and sign in." : "Not connected")),
+      g.connected ? [["Disconnect", () => disconnectAcc("google")]]
+                  : g.client_saved ? [["Connect", () => connectGoogle(), "primary"], ["Setup", () => toggle("g-setup")]]
+                                   : [["Connect", () => toggle("g-setup", true), "primary"]]);
+  for (const k of ["slack", "github"]) {
+    const a = st[k];
+    const name = k === "slack" ? "Slack" : "GitHub";
+    const sub = a.connected ? `Connected${a.team ? `: ${a.team}` : a.user ? `: ${a.user}` : ""}${a.from_env ? " (from server .env)" : ""}` : "Not connected";
+    row(name, sub, a.connected && !a.from_env ? [["Disconnect", () => disconnectAcc(k)]]
+                 : a.connected ? [] : [["Connect", () => showToken(k), "primary"]]);
+  }
+  if (g.connected && accPoll) { clearInterval(accPoll); accPoll = null; accMsg(`Google connected: ${g.email || ""}. Try "read my latest emails".`, true); $("g-setup").classList.add("hidden"); }
+}
+function toggle(id, show) { const n = $(id); n.classList.toggle("hidden", show === undefined ? !n.classList.contains("hidden") : !show); }
+async function loadAccounts() {
+  const r = await apiDetail("/api/accounts");
+  if (r.ok) renderAccounts(r.data);
+  else accMsg(r.status === 404 ? "Your server is older than this app. Update it to connect accounts." : r.error);
+}
+async function connectGoogle() {
+  accMsg("Opening Google sign-in...");
+  const r = await apiDetail("/api/accounts/google/start", { method: "POST", body: {} });
+  if (!r.ok) { accMsg(r.error); return; }
+  openExternal(r.data.url);
+  accMsg("Sign in with Google in the browser, tick every box, then come back here.");
+  clearInterval(accPoll);
+  let n = 0;
+  accPoll = setInterval(() => { if (++n > 100) { clearInterval(accPoll); accPoll = null; } loadAccounts(); }, 3000);
+}
+$("g-save").onclick = async () => {
+  const id = $("g-id").value.trim(), sec = $("g-secret").value.trim();
+  const body = id.startsWith("{") ? { json_text: id } : { client_id: id, client_secret: sec };
+  const r = await apiDetail("/api/accounts/google/client", { method: "POST", body });
+  if (!r.ok) { accMsg(r.error); return; }
+  $("g-secret").value = ""; renderAccounts(r.data); connectGoogle();
+};
+$("g-redirect").onclick = () => navigator.clipboard?.writeText($("g-redirect").textContent).then(() => accMsg("Copied.", true)).catch(() => {});
+function showToken(k) {
+  tokKind = k; $("tok-label").textContent = TOKEN_HELP[k].label; $("tok-help").textContent = TOKEN_HELP[k].help;
+  $("tok-val").value = ""; toggle("tok-setup", true); $("tok-val").focus();
+}
+$("tok-save").onclick = async () => {
+  accMsg("Checking the token...");
+  const r = await apiDetail(`/api/accounts/${tokKind}/connect`, { method: "POST", body: { token: $("tok-val").value.trim() } });
+  $("tok-val").value = "";
+  if (!r.ok) { accMsg(r.error); return; }
+  toggle("tok-setup", false); accMsg("Connected.", true); renderAccounts(r.data);
+};
+async function disconnectAcc(k) {
+  if (!confirm(`Disconnect ${k}? JARVIS deletes the stored sign-in.`)) return;
+  const r = await apiDetail(`/api/accounts/${k}/disconnect`, { method: "POST", body: {} });
+  if (r.ok) { accMsg("Disconnected.", true); renderAccounts(r.data); } else accMsg(r.error);
+}
+document.addEventListener("visibilitychange", () => { if (!document.hidden && accPoll) loadAccounts(); });
 $("prov-form").onsubmit = async (e) => {
   e.preventDefault();
   const body = { type: $("prov-type").value, api_key: $("prov-key").value.trim(), base_url: $("prov-base").value.trim() };
@@ -781,14 +910,26 @@ async function loadVoices() {
     list = window.speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang)).map((v) => ({ name: v.name, label: `${v.lang}: ${v.name}` }));
     current = store.get("jarvis_voice");
   }
-  sel.append(new Option("Default voice", ""));
+  const sv = await apiDetail("/api/tts/voices");
+  if (sv.ok && sv.data.voices.length) {
+    const g = document.createElement("optgroup"); g.label = "JARVIS server voices";
+    for (const v of sv.data.voices) g.append(new Option(v.label, `server:${v.id}`));
+    sel.append(g);
+  }
+  const g2 = document.createElement("optgroup"); g2.label = "Phone voices";
+  g2.append(new Option("Phone default voice", ""));
   // British voices first: the movie JARVIS is British.
   list.sort((a, b) => (/en-GB/i.test(b.label) - /en-GB/i.test(a.label)) || a.label.localeCompare(b.label));
-  for (const v of list) sel.append(new Option(v.label, v.name));
-  sel.value = current && list.some((v) => v.name === current) ? current : "";
+  for (const v of list) g2.append(new Option(v.label, v.name));
+  sel.append(g2);
+  const vals = [...sel.options].map((o) => o.value);
+  sel.value = serverVoice && vals.includes(`server:${serverVoice}`) ? `server:${serverVoice}`
+            : current && list.some((v) => v.name === current) ? current : "";
 }
 $("voice").onchange = async () => {
   const name = $("voice").value;
+  if (name.startsWith("server:")) { serverVoice = name.slice(7); store.set("jarvis_server_voice", serverVoice); return; }
+  serverVoice = ""; store.set("jarvis_server_voice", "");
   if (Native?.setVoice) await Native.setVoice({ name: name || null }).catch(() => {});
   else { store.set("jarvis_voice", name); pickVoice(); }
 };
@@ -812,6 +953,7 @@ function renderVoiceChoice() {
 async function loadSecurity() {
   renderVoiceChoice();
   loadModels();
+  loadAccounts();
   refreshUpdate();
   loadPersonal();
   const p = await api("/api/permissions"); const a = await api("/api/audit");
@@ -861,7 +1003,10 @@ function start() {
   $("pair").classList.add("hidden"); $("main").classList.remove("hidden"); $("tabs").classList.remove("hidden");
   setState("offline"); renderStatus(); renderClock();
   note("Say Hey JARVIS, tap the mic, or type.");
-  api("/api/status").then((st) => { serverStt = !!st?.server_stt; myName = st?.user || null; }).catch(() => {});
+  api("/api/status").then((st) => {
+    serverStt = !!st?.server_stt; myName = st?.user || null;
+    if (serverVoice == null) serverVoice = st?.server_voice ? "jarvis" : "";
+  }).catch(() => {});
   apiDetail("/api/brief").then((r) => r.ok && syncBrief(r.data)).catch(() => {});   // keep the phone alarm in sync
   setTimeout(() => refreshUpdate().then(offerUpdateBanner).catch(() => {}), 3000);
   connect();

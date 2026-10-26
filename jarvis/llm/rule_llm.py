@@ -195,6 +195,19 @@ class RuleLLM:
         names = _names(t)
         ents = [{"name": n, "type": "person"} for n in names]
         rels, attrs = [], []
+        fam = r"((?i:sister|brother|mom|mother|dad|father|wife|husband|partner|friend|boss|manager|advisor|guide|professor|roommate|cousin|colleague|labmate))"
+        m1 = re.search(rf"(?i:\bmy) {fam}(?i:'s name is|,| is called| is named|)\s+({NAME_RX})", t)
+        m2 = None if m1 else re.search(rf"({NAME_RX}) (?i:is my) {fam}", t)
+        m = m1 or m2
+        if m:
+            rel, who = (m.group(1), m.group(2)) if m1 else (m.group(2), m.group(1))
+            who = re.sub(r"\s+(Studies|Works|Lives|Is)$", "", who)
+            if who not in [e["name"] for e in ents]:
+                ents.append({"name": who, "type": "person"})
+            attrs.append({"entity": who, "key": "relationship", "value": rel.lower()})
+        m = re.search(rf"({NAME_RX})\s+(studies|works|lives) (?:at|in|for) ([A-Z][\w .]+?)(?:\.|,|$)", t)
+        if m:
+            attrs.append({"entity": m.group(1), "key": f"{m.group(2)} at", "value": m.group(3).strip()})
         m = re.search(rf"({NAME_RX}) introduced me to ({NAME_RX})", t)
         if m:
             rels.append({"from": m.group(2), "relation": "introduced_by", "to": m.group(1)})
@@ -283,6 +296,28 @@ class RuleLLM:
             subject = subj.group(1) if subj and subj.group(1) != "None" else (text[:40].capitalize() or "Quick note")
             return {"subject": subject, "body": body}
         return {"subject": None, "body": sentence}
+
+    # ------------------------------------------------------------------ follow-up rewriting (offline)
+    def _t_rewrite(self, prompt, system):
+        latest = re.search(r"^Latest:\s*(.+)$", prompt, re.M)
+        prev = re.search(r"^Previous request:\s*(.*)$", prompt, re.M)
+        person = re.search(r"^Person mentioned last:\s*(.+)$", prompt, re.M)
+        t = (latest.group(1) if latest else "").strip().rstrip("?")
+        p = (prev.group(1) if prev else "").strip().rstrip("?")
+        m = re.match(r"^(?:and|what about|how about|also|ok(?:ay)? and|but)\s+(.+)$", t, re.I)
+        if m and p:
+            rest = m.group(1)
+            day = re.compile(r"\b(today|tonight|tomorrow|day after tomorrow|(?:next |this )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|next week)\b", re.I)
+            if day.search(rest) and day.search(p):
+                return {"request": day.sub(day.search(rest).group(0), p, count=1)}
+            names = _names(rest)
+            pnames = _names(p)
+            if names and pnames:
+                return {"request": p.replace(pnames[0], names[0], 1)}
+            return {"request": f"{p} {rest}"}
+        if person:
+            t = re.sub(r"\b(him|her|them)\b", person.group(1).strip(), t, flags=re.I)
+        return {"request": t}
 
     # ------------------------------------------------------------------ inbox triage (offline heuristics)
     def _t_triage(self, prompt, system):

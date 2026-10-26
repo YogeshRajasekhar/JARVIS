@@ -47,6 +47,7 @@ class Services:
     clock: Callable[[], datetime] = None
     integration_modes: dict = field(default_factory=dict)
     llm_registry: object = None
+    accounts: object = None
 
     def now(self) -> datetime:
         return self.clock() if self.clock else datetime.now(ZoneInfo(self.settings.timezone))
@@ -79,12 +80,27 @@ class Services:
         hits = out.data.get("contacts", [])
         if not hits and known and known["name"].lower() != name.lower():
             hits = self.executor.propose("contacts.find", {"name": name}, actor).data.get("contacts", [])
+        if not hits and need == "email" and self.integration_modes.get("mail") == "google":
+            hit = self._email_from_mail(known["name"] if known else name, actor)
+            if hit:
+                return hit, None
         if not hits:
             return known, None
         c = hits[0]
         merged = {"name": (known or {}).get("name") or c["name"], "email": (known or {}).get("email") or c.get("email") or None,
                   "phone": (known or {}).get("phone") or c.get("phone")}
         return merged, None
+
+    def _email_from_mail(self, name: str, actor: str) -> Optional[dict]:
+        """Find an address in mail you exchanged with this person (needs mail.read like any mail access)."""
+        out = self.executor.propose("mail.read", {"limit": 5, "query": f"from:{name} OR to:{name}"}, actor)
+        if out.status != "done":
+            return None
+        first = name.split()[0].lower()
+        for e in out.data.get("emails", []):
+            if first in (e.sender or "").lower() or first in (e.sender_email or "").lower():
+                return {"name": e.sender or name, "email": e.sender_email, "phone": None}
+        return None
 
     def is_known_person(self, name_or_email: str) -> bool:
         if not name_or_email:
@@ -106,17 +122,17 @@ def _target_for_people(svc: "Services", people: list[str]) -> TargetSensitivity:
 
 
 def register_tools(svc: Services) -> None:
-    ex, cal = svc.executor, svc.calendar
+    ex = svc.executor
     fmt = lambda iso: fmt_time(datetime.fromisoformat(iso), svc.now())
 
     # ---------------------------------------------------------------- calendar
     ex.register(Tool(
         "calendar.list", scopes=("calendar.read",),
-        run=lambda a: {"events": [e.to_dict() for e in cal.list_events(datetime.fromisoformat(a["start"]), datetime.fromisoformat(a["end"]))]},
+        run=lambda a: {"events": [e.to_dict() for e in svc.calendar.list_events(datetime.fromisoformat(a["start"]), datetime.fromisoformat(a["end"]))]},
         describe=lambda a: "Read your calendar"))
     ex.register(Tool(
         "calendar.create", scopes=("calendar.write",), severity=ActionSeverity.WRITE,
-        run=lambda a: {"event": cal.create(a["title"], datetime.fromisoformat(a["start"]), datetime.fromisoformat(a["end"]),
+        run=lambda a: {"event": svc.calendar.create(a["title"], datetime.fromisoformat(a["start"]), datetime.fromisoformat(a["end"]),
                                            a.get("attendees") or [], a.get("location")).to_dict(),
                        "message": f"Booked {a['title']} {fmt(a['start'])}."},
         describe=lambda a: f"Create event '{a['title']}' {fmt(a['start'])} to {datetime.fromisoformat(a['end']).strftime('%I:%M %p').lstrip('0')}"
@@ -127,7 +143,7 @@ def register_tools(svc: Services) -> None:
         summary=lambda a: f"booking {a['title']} {fmt(a['start'])}"))
     ex.register(Tool(
         "calendar.move", scopes=("calendar.write",), severity=ActionSeverity.WRITE,
-        run=lambda a: {"event": cal.update(a["event_id"], start=datetime.fromisoformat(a["start"]), end=datetime.fromisoformat(a["end"])).to_dict(),
+        run=lambda a: {"event": svc.calendar.update(a["event_id"], start=datetime.fromisoformat(a["start"]), end=datetime.fromisoformat(a["end"])).to_dict(),
                        "message": f"Moved {a['title']} to {fmt(a['start'])}."},
         describe=lambda a: f"Move '{a['title']}' to {fmt(a['start'])}",
         summary=lambda a: f"moving {a['title']} to {fmt(a['start'])}",
@@ -135,7 +151,7 @@ def register_tools(svc: Services) -> None:
         resource=lambda a: "calendar"))
     ex.register(Tool(
         "calendar.cancel", scopes=("calendar.write",), severity=ActionSeverity.IRREVERSIBLE, reversible=False,
-        run=lambda a: {"deleted": cal.delete(a["event_id"]), "message": f"Cancelled {a['title']}."},
+        run=lambda a: {"deleted": svc.calendar.delete(a["event_id"]), "message": f"Cancelled {a['title']}."},
         describe=lambda a: f"Cancel '{a['title']}' ({fmt(a['start'])})",
         summary=lambda a: f"cancelling {a['title']} {fmt(a['start'])}",
         resource=lambda a: "calendar"))
@@ -359,6 +375,12 @@ def build_services(settings: Optional[Settings] = None, *, db: Optional[Database
                    calendar=calendar, mail=mail, slack=slack, github=github, places=places,
                    device=device or SimulatedDevice(), clock=clock, integration_modes=modes,
                    llm_registry=registry)
+    from jarvis.integrations.accounts import AccountManager
+    svc.accounts = AccountManager(svc)
+    try:
+        svc.accounts.apply_saved()               # accounts connected from the app override .env and mocks
+    except Exception as e:
+        log.warning("Saved accounts not applied: %s", e)
     register_tools(svc)
     if settings.seed_demo_data if seed is None else seed:
         seed_demo(svc)

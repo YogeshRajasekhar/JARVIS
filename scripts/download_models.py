@@ -12,6 +12,8 @@ import urllib.request
 
 WAKE = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/"
 VOICE = "https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-en-us-lessac-low.tar.gz"
+# British male voice for the JARVIS server voice (MIT-licensed Piper voice, about 63 MB).
+GB = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/"
 
 
 def fetch(url: str, dest: str) -> None:
@@ -36,6 +38,12 @@ def main() -> None:
         with tarfile.open(tgz) as t:
             t.extractall(a.dir, filter="data")
         os.remove(tgz)
+    if a.voice:
+        for f in ("en_GB-alan-medium.onnx", "en_GB-alan-medium.onnx.json"):
+            try:
+                fetch(GB + f, os.path.join(a.dir, f))
+            except Exception as e:            # optional: the app falls back to the phone's voice
+                print("skip", f, e)
     print("done")
 
 

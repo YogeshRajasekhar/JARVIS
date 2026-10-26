@@ -27,8 +27,24 @@ def _first_sentence(text: str, n: int = 110) -> str:
 class CommunicationAgent(BaseAgent):
     name = "communication"
 
+    NOT_CONNECTED = {
+        "mail": "Your Gmail isn't connected yet, so I can't {what}. Open Settings, Accounts, and tap Connect Google. It takes a minute.",
+        "slack": "Slack isn't connected yet, so I can't {what}. Open Settings, Accounts, and add your Slack token.",
+    }
+
+    def _unconnected(self, kind: str, what: str) -> AgentReply | None:
+        """Demo data aside, mock providers must never pretend to read or send real messages."""
+        if self.svc.integration_modes.get(kind) == "mock" and not self.svc.settings.seed_demo_data:
+            return AgentReply(self.name, self.NOT_CONNECTED[kind].format(what=what))
+        return None
+
     def handle(self, text: str, ctx: TurnContext) -> AgentReply:
         cmd: MessageOut = self.extract(MessageOut, MESSAGE, text, ctx, task="message")
+        kind = "slack" if cmd.action in ("read_slack", "draft_slack") else "mail"
+        what = {"read_inbox": "read your inbox", "search_email": "search your mail", "reply_email": "reply to that email",
+                "read_slack": "read Slack", "draft_slack": "send that Slack message"}.get(cmd.action, "send that email")
+        if (nc := self._unconnected(kind, what)):
+            return nc
         if cmd.action in ("read_inbox", "search_email"):
             return self._read_mail(cmd, ctx)
         if cmd.action == "read_slack":

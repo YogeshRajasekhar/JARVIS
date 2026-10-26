@@ -19,10 +19,12 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from dataclasses import dataclass, field
 from typing import Any, Optional, TypedDict
 
 from langgraph.graph import END, StateGraph
+from pydantic import BaseModel, Field
 
 from jarvis.agents.base import AgentError, AgentReply, TurnContext
 from jarvis.agents.communication import CommunicationAgent
@@ -34,7 +36,7 @@ from jarvis.core.redaction import redact
 from jarvis.llm.providers import LLMUnavailable
 from jarvis.llm.schemas import RouteOut, SplitOut
 from jarvis.llm.structured import StructuredOutputError, complete_json
-from jarvis.prompts import ROUTER, SPLITTER
+from jarvis.prompts import REWRITE, ROUTER, SPLITTER
 from jarvis.router_rules import fast_route, looks_multi_intent
 
 log = logging.getLogger("jarvis.brain")
@@ -45,7 +47,14 @@ YES_RX = re.compile(r"^(yes|yeah|yep|yup|sure|ok(ay)?|go ahead|do it|send it|app
 NO_RX = re.compile(r"^(no|nope|nah|don'?t( send( it)?)?|do not( send( it)?)?|cancel( it| that)?|stop|discard( it)?|reject( it)?|never ?mind)[\s,.!]*(thanks|please)?[\s.!]*$", re.I)
 LOCKDOWN_RX = re.compile(r"\b(lock ?down|emergency stop|stop everything|kill switch)\b", re.I)
 UNLOCK_RX = re.compile(r"^\s*(unlock|disable lockdown|end lockdown)\b", re.I)
+FOLLOWUP_RX = re.compile(
+    r"^(and|what about|how about|also|same (for|with)|then|ok(ay)? and|but)\b"
+    r"|^.{0,40}\b(him|her|them|it|that one|there|those|these|he|she|they|the same)\b.{0,40}$", re.I)
 ALLOW_RX = re.compile(r"^(allow|always allow|grant|give (it )?access)\b", re.I)
+
+
+class RewriteOut(BaseModel):
+    request: str = Field(min_length=1, max_length=400)
 
 
 class BrainState(TypedDict, total=False):
@@ -68,10 +77,11 @@ class TurnResult:
     cards: list[dict] = field(default_factory=list)
     steps: list[str] = field(default_factory=list)
     provider: Optional[str] = None
+    understood: Optional[str] = None     # the standalone request a follow-up was rewritten to
 
     def to_dict(self) -> dict:
         return {"reply": self.reply, "agents": self.agents, "requests": self.requests, "cards": self.cards,
-                "steps": self.steps, "provider": self.provider}
+                "steps": self.steps, "provider": self.provider, "understood": self.understood}
 
 
 class Brain:
@@ -236,6 +246,30 @@ class Brain:
             return TurnResult("Please tap Allow on the permission prompt. I don't accept permissions by voice.", ["guardrail"])
         return None
 
+    # ------------------------------------------------------------------ follow-ups
+    def _contextualize(self, text: str) -> Optional[str]:
+        """
+        "and tomorrow?", "email her that", "what about Priya" only make sense with the previous turn.
+        Rewrite those into a standalone request (fast model, with the last exchanges), so every agent gets
+        the full meaning. Standalone messages are left alone (no model call).
+        """
+        if self.focus.get("pending") or OPTION_RX.match(text.strip()) or not FOLLOWUP_RX.search(text):
+            return None
+        rows = self.svc.db.recent_messages(7)[:-1]            # without the message we just stored
+        if not rows or time.time() - rows[-1]["ts"] > 15 * 60:
+            return None
+        convo = "\n".join(f"{m['role']}: {m['content'][:220]}" for m in rows[-4:])
+        last_user = next((m["content"] for m in reversed(rows) if m["role"] == "user"), "")
+        f = self.focus
+        hints = "".join([f"\nPerson mentioned last: {f['last_person']}" if f.get("last_person") else ""])
+        prompt = f"Conversation:\n{convo}{hints}\nPrevious request: {last_user}\nLatest: {text}"
+        try:
+            out: RewriteOut = complete_json(self.svc.fast_llm, RewriteOut, REWRITE, prompt, task="rewrite", max_tokens=120)
+            r = out.request.strip()
+            return r if 0 < len(r) <= 400 else None
+        except Exception:
+            return None
+
     def handle(self, user_text: str, record: bool = True) -> TurnResult:
         text = WAKE_RX.sub("", user_text or "").strip()
         if not text:
@@ -243,7 +277,11 @@ class Brain:
         if record:
             self.svc.db.add_message("user", redact(text))
         res = self._control(text)
+        understood = None
         if res is None:
+            standalone = self._contextualize(text)
+            if standalone and standalone.strip().lower() != text.strip().lower():
+                understood, text = standalone, standalone
             final = self.graph.invoke({"text": text})
             replies: list[AgentReply] = final["replies"]
             texts = [r.text for r in replies if r.text]
@@ -257,6 +295,7 @@ class Brain:
                 cards=[c for r in replies for c in r.cards],
                 steps=final.get("steps", []),
                 provider=getattr(self.svc.fast_llm, "last_provider", None),
+                understood=understood,
             )
         self.svc.db.add_message("assistant", redact(res.reply), agent=",".join(res.agents))
         self.svc.db.trim_messages()

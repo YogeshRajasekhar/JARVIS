@@ -17,6 +17,7 @@ Run: python -m jarvis.server        (prints the pairing token on first start)
 from __future__ import annotations
 
 import asyncio
+import html
 import hmac
 import json
 import logging
@@ -30,7 +31,7 @@ from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -69,6 +70,33 @@ class ScopeIn(BaseModel):
 
 class UnlockIn(BaseModel):
     confirm: str
+
+
+class GoogleClientIn(BaseModel):
+    client_id: str = Field("", max_length=200)
+    client_secret: str = Field("", max_length=200)
+    json_text: str = Field("", max_length=4000)
+
+
+class GoogleStartIn(BaseModel):
+    login_hint: Optional[str] = Field(None, max_length=200)
+
+
+class TTSIn(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    voice: str = Field("jarvis", pattern=r"^[a-z]{2,20}$")
+
+
+class TokenIn(BaseModel):
+    token: str = Field(min_length=10, max_length=300)
+
+
+def _oauth_page(title: str, msg: str) -> str:
+    return ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
+            f"<title>JARVIS: {title}</title><body style='font-family:system-ui;background:#0b1016;color:#e8eef5;"
+            "display:grid;place-items:center;min-height:90vh;margin:0;padding:16px'>"
+            f"<main style='max-width:420px'><h1 style='font-size:22px'>{title}</h1><p style='line-height:1.5'>{msg}</p>"
+            "<p style='color:#8b98a7'>You can close this tab.</p></main></body>")
 
 
 class ProviderIn(BaseModel):
@@ -271,7 +299,7 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
                 "llm_last": svc.fast_llm.last_provider,
                 "llm_errors": {**svc.fast_llm.last_errors, **svc.smart_llm.last_errors},
                 "wake_word": wake_factory is not None, "user": settings.user_name,
-                "server_stt": svc.llm_registry.stt() is not None}
+                "server_stt": svc.llm_registry.stt() is not None, "server_voice": _has_voice()}
 
     # ------------------------------------------------------------------ language-model providers (Settings)
     from jarvis.llm.registry import RegistryError
@@ -299,6 +327,67 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
     @app.get("/api/llm", dependencies=[Depends(auth)])
     async def llm_get():
         return await asyncio.to_thread(llm_state)
+
+    # ------------------------------------------------------------------ connected accounts
+    from jarvis.integrations.accounts import AccountError
+    acc = svc.accounts
+
+    def redirect_uri(request: Request) -> str:
+        base = os.environ.get("JARVIS_PUBLIC_URL", "").rstrip("/")
+        if not base:
+            host = request.headers.get("host", "localhost")
+            local = host.split(":")[0] in {"localhost", "127.0.0.1"}
+            base = f"{'http' if local else 'https'}://{host}"
+        return f"{base}/oauth/google/callback"
+
+    def acct(fn):
+        def run(*a, **kw):
+            if svc.executor.locked_down:
+                raise HTTPException(423, "Lockdown is on. Unlock JARVIS first.")
+            try:
+                return fn(*a, **kw)
+            except AccountError as e:
+                raise HTTPException(400, str(e))
+        return run
+
+    @app.get("/api/accounts", dependencies=[Depends(auth)])
+    async def accounts_get(request: Request):
+        return acc.status(redirect_uri(request))
+
+    @app.post("/api/accounts/google/client", dependencies=[Depends(auth)])
+    async def accounts_google_client(request: Request, body: GoogleClientIn):
+        await asyncio.to_thread(acct(acc.save_google_client), body.client_id, body.client_secret, body.json_text)
+        return acc.status(redirect_uri(request))
+
+    @app.post("/api/accounts/google/start", dependencies=[Depends(auth)])
+    async def accounts_google_start(request: Request, body: GoogleStartIn):
+        return {"url": acct(acc.start_google)(redirect_uri(request), body.login_hint)}
+
+    @app.get("/oauth/google/callback")
+    async def accounts_google_callback(state: str = "", code: str = "", error: str = ""):
+        # No device token here: the phone's browser arrives straight from Google. The single-use,
+        # 10-minute `state` (plus PKCE) is what ties this request to a sign-in the app started.
+        if len(state) > 200 or len(code) > 2000 or len(error) > 200:
+            raise HTTPException(400, "bad request")
+        try:
+            email = await asyncio.to_thread(acc.finish_google, state, code or None, error or None)
+            return HTMLResponse(_oauth_page("Connected", f"JARVIS can now use {html.escape(email)} for mail and calendar. "
+                                            "Go back to the JARVIS app."))
+        except AccountError as e:
+            return HTMLResponse(_oauth_page("Not connected", html.escape(str(e))), status_code=400)
+
+    @app.post("/api/accounts/{kind}/connect", dependencies=[Depends(auth)])
+    async def accounts_connect(request: Request, kind: str, body: TokenIn):
+        fn = {"slack": acc.connect_slack, "github": acc.connect_github}.get(kind)
+        if not fn:
+            raise HTTPException(404, "unknown account")
+        await asyncio.to_thread(acct(fn), body.token)
+        return acc.status(redirect_uri(request))
+
+    @app.post("/api/accounts/{kind}/disconnect", dependencies=[Depends(auth)])
+    async def accounts_disconnect(request: Request, kind: str):
+        await asyncio.to_thread(acct(acc.disconnect), kind)
+        return acc.status(redirect_uri(request))
 
     @app.post("/api/llm/providers", dependencies=[Depends(auth)])
     async def llm_add(p: ProviderIn):
@@ -378,13 +467,25 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
         return FileResponse(path, media_type="application/vnd.android.package-archive",
                             filename=f"jarvis-{info['code']}.apk", headers={"X-Sha256": info["sha256"]})
 
+    def _has_voice() -> bool:
+        try:
+            import piper  # noqa: F401
+        except ImportError:
+            return False
+        from jarvis.voice.speech import available_voices
+        return bool(available_voices(model_dir))
+
+    @app.get("/api/tts/voices", dependencies=[Depends(auth)])
+    async def tts_voices():
+        from jarvis.voice.speech import available_voices
+        return {"voices": available_voices(model_dir)}
+
     @app.post("/api/tts", dependencies=[Depends(auth)])
-    async def tts(m: MessageIn):
-        from jarvis.voice.speech import build_tts
-        engine = await asyncio.to_thread(build_tts, model_dir)
-        if engine is None:
-            raise HTTPException(503, "server TTS not installed; the phone speaks locally")
-        wav = await asyncio.to_thread(engine.synthesize, m.text[:600])
+    async def tts(m: TTSIn):
+        from jarvis.voice.speech import speak
+        wav = await asyncio.to_thread(speak, m.text[:600], m.voice, model_dir)
+        if wav is None:
+            raise HTTPException(503, "server voice not installed; the phone speaks locally")
         return Response(wav, media_type="audio/wav")
 
     @app.post("/api/stt", dependencies=[Depends(auth)])
@@ -537,5 +638,8 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
         app.state.updates = asyncio.create_task(update_loop())
         app.state.triage = asyncio.create_task(triage_loop())
         app.state.backups = asyncio.create_task(backup_loop())
+        if _has_voice():                                  # load the voice now so the first reply isn't slow
+            from jarvis.voice.speech import speak
+            app.state.voice_warm = asyncio.create_task(asyncio.to_thread(speak, "Ready.", "jarvis", model_dir))
 
     return app

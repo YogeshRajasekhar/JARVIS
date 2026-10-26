@@ -181,3 +181,12 @@ button { cursor: pointer; }
   border: 1px solid var(--line); color: var(--text); }
 .prov-form input[type=checkbox], .prov-form input[type=radio] { width: auto; flex: none; padding: 0; }
 .prov-form .choice { text-align: left; }
+
+/* Accounts */
+.steps { margin: 4px 0 8px 18px; padding: 0; line-height: 1.5; }
+.steps li { margin-bottom: 6px; }
+.steps a { color: var(--accent, #4fd1ff); }
+code.copy { display: block; margin: 6px 0; padding: 8px; border-radius: 8px; background: rgba(255,255,255,.06);
+  font-size: 12px; word-break: break-all; cursor: pointer; }
+/* Android WebView draws native option lists light: keep their text readable */
+select option { color: #111; background: #fff; }

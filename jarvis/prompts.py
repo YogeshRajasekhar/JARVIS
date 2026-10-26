@@ -119,6 +119,8 @@ OUTPUT: only this JSON object:
 ENTITY TYPES: person, meeting, task, commitment, place, project, preference
 RELATIONS: relates_to, follows_up, blocks, introduced_by, attended, owes, works_on, meets_at, prefers, works_with
   "A introduced_by B" means B introduced A to the user.
+  Family, friends and roles (sister, mother, boss, advisor, roommate...) are an ATTRIBUTE:
+  {"entity": "Ananya", "key": "relationship", "value": "sister"}.
   "A owes B" means A owes B something. The user is the entity "me".
   "A blocks B" means A must finish before B.
 
@@ -131,7 +133,8 @@ EXAMPLES:
 "remember that Priya introduced me to Arun" -> {"entities": [{"name": "Priya", "type": "person"}, {"name": "Arun", "type": "person"}], "relations": [{"from": "Arun", "relation": "introduced_by", "to": "Priya"}], "attributes": []}
 "Arun's email is arun@iitm.ac.in and he works on the cloth project" -> {"entities": [{"name": "Arun", "type": "person"}, {"name": "cloth project", "type": "project"}], "relations": [{"from": "Arun", "relation": "works_on", "to": "cloth project"}], "attributes": [{"entity": "Arun", "key": "email", "value": "arun@iitm.ac.in"}]}
 "I promised Kavya the dataset by Friday" -> {"entities": [{"name": "Kavya", "type": "person"}, {"name": "send dataset to Kavya", "type": "commitment"}], "relations": [{"from": "send dataset to Kavya", "relation": "relates_to", "to": "Kavya"}], "attributes": [{"entity": "send dataset to Kavya", "key": "due", "value": "Friday"}]}
-"I prefer meetings after 10am" -> {"entities": [{"name": "meetings after 10am", "type": "preference"}], "relations": [], "attributes": [{"entity": "meetings after 10am", "key": "rule", "value": "no meetings before 10:00"}]}"""
+"I prefer meetings after 10am" -> {"entities": [{"name": "meetings after 10am", "type": "preference"}], "relations": [], "attributes": [{"entity": "meetings after 10am", "key": "rule", "value": "no meetings before 10:00"}]}
+"my sister Ananya studies at Anna University" -> {"entities": [{"name": "Ananya", "type": "person"}, {"name": "Anna University", "type": "place"}], "relations": [{"from": "Ananya", "relation": "relates_to", "to": "Anna University"}], "attributes": [{"entity": "Ananya", "key": "relationship", "value": "sister"}, {"entity": "Ananya", "key": "studies at", "value": "Anna University"}]}"""
 
 MESSAGE = """ROLE: You extract an email or Slack command from the user's message.
 
@@ -261,3 +264,30 @@ EXAMPLE:
  {"request": "find me two hours free tomorrow to prepare slides", "agent": "scheduler", "urgency": 4, "importance": 5},
  {"request": "what do I know about the thesis review", "agent": "memory", "urgency": 3, "importance": 4},
  {"request": "remind me on Thursday 8pm to rehearse the thesis talk", "agent": "device", "urgency": 3, "importance": 4}]}"""
+
+
+REWRITE = """ROLE: You turn the user's latest message into ONE standalone request, using the recent conversation.
+
+OUTPUT: only this JSON object: {"request": "<standalone request>"}
+
+RULES:
+1. Replace pronouns and references (him, her, it, that, there, the same, tomorrow instead) with what they refer to in the conversation.
+2. Keep the user's intent and every detail. Do not answer it. Do not add anything new.
+3. If the message is already standalone, return it unchanged.
+
+EXAMPLES:
+Conversation: user: what's on my calendar today / assistant: You have 2 events today...
+Latest: "and tomorrow?" -> {"request": "what's on my calendar tomorrow"}
+Conversation: user: who introduced me to Arun? / assistant: Priya introduced you to Arun.
+Latest: "email her that I said thanks" -> {"request": "email Priya that I said thanks"}
+Latest: "set an alarm for 6am" -> {"request": "set an alarm for 6am"}"""
+
+MEMORY_ANSWER = """ROLE: You answer the user's question using ONLY the facts below, which come from their personal memory.
+
+RULES:
+1. Answer in 1-2 short spoken sentences. No lists, no markdown.
+2. Use only the FACTS. If they don't contain the answer, say you don't know that yet and that they can tell you.
+3. Never guess or add details that are not in the facts. "me" in the facts means the user.
+
+FACTS:
+{facts}"""

@@ -38,6 +38,10 @@ public class WakeWordService extends Service {
     private static final long REFRACTORY_MS = 2000;
 
     private volatile boolean running = false;
+    private static volatile boolean active = false;
+
+    /** True while the listener is switched on, so pause/resume aren't sent to a stopped service. */
+    public static boolean isActive() { return active; }
     private volatile boolean paused = false;
     private Thread worker;
 
@@ -89,6 +93,7 @@ public class WakeWordService extends Service {
 
     private void startListening() {
         running = true;
+        active = true;
         worker = new Thread(() -> {
             int min = AudioRecord.getMinBufferSize(16000, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
             AudioRecord rec;
@@ -155,6 +160,7 @@ public class WakeWordService extends Service {
 
     private void stopListening() {
         running = false;
+        active = false;
         if (worker != null) worker.interrupt();
     }
 

@@ -30,6 +30,7 @@ class Settings:
     gemini_api_key: str = field(default_factory=lambda: _env("GEMINI_API_KEY"))
     openrouter_api_key: str = field(default_factory=lambda: _env("OPENROUTER_API_KEY"))
     anthropic_api_key: str = field(default_factory=lambda: _env("ANTHROPIC_API_KEY"))
+    openai_api_key: str = field(default_factory=lambda: _env("OPENAI_API_KEY"))
     ollama_url: str = field(default_factory=lambda: _env("OLLAMA_URL"))
 
     # Fast tier = routing / extraction. Smart tier = planning / conversation.

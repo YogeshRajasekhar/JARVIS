@@ -7,19 +7,24 @@ and a one-word test call. Never prints keys.
 """
 
 from jarvis.config import Settings
+from jarvis.core.storage import Database
 from jarvis.llm.providers import build_llms
 
 
 def main() -> None:
     s = Settings()
-    fast, smart = build_llms(s)
+    try:
+        db = Database(s.db_path, s.data_key or None)   # includes keys added in the app
+    except Exception:
+        db = None
+    fast, smart = build_llms(s, db)
     print(f"mode={s.llm_mode}  groq_key={'set' if s.groq_api_key else 'missing'}  "
           f"gemini_key={'set' if s.gemini_api_key else 'missing'}  openrouter_key={'set' if s.openrouter_api_key else 'missing'}")
     for tier, chain in (("fast", fast), ("smart", smart)):
         for p in chain.providers:
             if getattr(p, "is_offline_engine", False):
                 continue
-            line = f"[{tier}] {p.family:<10}"
+            line = f"[{tier}] {getattr(p, 'registry_id', p.family):<18}"
             try:
                 models = p.list_models() if hasattr(p, "list_models") else []
                 line += f" {len(models)} models visible to this key;"

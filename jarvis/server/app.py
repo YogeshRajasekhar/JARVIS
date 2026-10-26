@@ -71,6 +71,24 @@ class UnlockIn(BaseModel):
     confirm: str
 
 
+class ProviderIn(BaseModel):
+    type: str = Field(max_length=20)
+    api_key: str = Field("", max_length=400)
+    base_url: str = Field("", max_length=300)
+    model_fast: str = Field("auto", max_length=120)
+    model_smart: str = Field("auto", max_length=120)
+
+
+class ProviderPatch(BaseModel):
+    enabled: Optional[bool] = None
+    model_fast: Optional[str] = Field(None, max_length=120)
+    model_smart: Optional[str] = Field(None, max_length=120)
+
+
+class OrderIn(BaseModel):
+    ids: list[str] = Field(max_length=30)
+
+
 class Guard:
     """Token check + per-IP lockout after repeated failures."""
 
@@ -243,7 +261,57 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
                 "llm_last": svc.fast_llm.last_provider,
                 "llm_errors": {**svc.fast_llm.last_errors, **svc.smart_llm.last_errors},
                 "wake_word": wake_factory is not None, "user": settings.user_name,
-                "server_stt": bool(settings.groq_api_key) and settings.llm_mode != "offline"}
+                "server_stt": svc.llm_registry.stt() is not None}
+
+    # ------------------------------------------------------------------ language-model providers (Settings)
+    from jarvis.llm.registry import RegistryError
+
+    reg = svc.llm_registry
+
+    def llm_state() -> dict:
+        return {"catalog": reg.catalog(), "providers": reg.describe([svc.fast_llm, svc.smart_llm]),
+                "server_stt": reg.stt() is not None}
+
+    def guarded(fn):
+        """Lockdown freezes model settings too; registry errors become a readable 400."""
+        def run(*a, **kw):
+            if svc.executor.locked_down:
+                raise HTTPException(423, "Lockdown is on. Unlock JARVIS first.")
+            try:
+                out = fn(*a, **kw)
+            except RegistryError as e:
+                raise HTTPException(400, str(e))
+            with brain_lock:
+                reg.apply(svc)
+            return {**llm_state(), "result": out}
+        return run
+
+    @app.get("/api/llm", dependencies=[Depends(auth)])
+    async def llm_get():
+        return await asyncio.to_thread(llm_state)
+
+    @app.post("/api/llm/providers", dependencies=[Depends(auth)])
+    async def llm_add(p: ProviderIn):
+        return await asyncio.to_thread(guarded(reg.add), p.type, p.api_key, p.base_url, p.model_fast, p.model_smart)
+
+    @app.post("/api/llm/providers/{pid}", dependencies=[Depends(auth)])
+    async def llm_update(pid: str, p: ProviderPatch):
+        return await asyncio.to_thread(guarded(reg.update), pid, p.enabled, p.model_fast, p.model_smart)
+
+    @app.delete("/api/llm/providers/{pid}", dependencies=[Depends(auth)])
+    async def llm_remove(pid: str):
+        return await asyncio.to_thread(guarded(reg.remove), pid)
+
+    @app.post("/api/llm/order", dependencies=[Depends(auth)])
+    async def llm_order(o: OrderIn):
+        return await asyncio.to_thread(guarded(reg.reorder), o.ids)
+
+    @app.get("/api/llm/providers/{pid}/models", dependencies=[Depends(auth)])
+    async def llm_models(pid: str):
+        try:
+            return {"models": await asyncio.to_thread(reg.models, pid)}
+        except RegistryError as e:
+            raise HTTPException(400, str(e))
 
     @app.post("/api/tts", dependencies=[Depends(auth)])
     async def tts(m: MessageIn):
@@ -260,7 +328,7 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
         audio = await request.body()
         if len(audio) > 5_000_000:
             raise HTTPException(413, "audio too long")
-        engine = await asyncio.to_thread(build_stt, settings)
+        engine = await asyncio.to_thread(build_stt, settings, svc.llm_registry)
         if engine is None:
             raise HTTPException(503, "no server STT configured; the phone transcribes locally")
         from jarvis.voice.speech import vocabulary_prompt

@@ -185,7 +185,7 @@ def test_whisper_voice_input_records_until_silence(page, server):
             return "what's my battery"
 
     speech_build = speech.build_stt
-    speech.build_stt = lambda settings: FakeWhisper()
+    speech.build_stt = lambda *a, **k: FakeWhisper()
     try:
         pg = page
         pg.reload()
@@ -250,3 +250,33 @@ def test_reconnect_does_not_crash(server, page):
     pg.wait_for_selector("#state:has-text('Ready')", timeout=15000)
     notes = " ".join(pg.locator("#log li.note").all_inner_texts())
     assert pg.errors[before:] == [] and "CONNECTING" not in notes, (pg.errors[before:], notes)
+
+
+def test_settings_add_model_provider(page, server, monkeypatch):
+    """Settings > Language models: paste a key, it's tested, added first, and the key field is wiped."""
+    from jarvis.llm.registry import LLMRegistry
+    from test_providers import GOOD_KEY, FakeLLM
+
+    monkeypatch.setattr(LLMRegistry, "client", lambda self, e, tier, key=None: FakeLLM(e, tier, self._key_for(e) if key is None else key))
+    _, svc = server
+    if svc.executor.locked_down:
+        svc.executor.unlock()
+    monkeypatch.setattr(svc.settings, "llm_mode", "auto")   # the e2e server otherwise runs offline
+    pg = page
+    pg.reload()
+    pg.wait_for_selector("#state:has-text('Ready')", timeout=10000)
+    pg.click("#tabs button[data-view=security]")
+    pg.wait_for_selector("#prov-type option[value=openai]", state="attached", timeout=8000)
+    pg.select_option("#prov-type", "openai")
+    pg.fill("#prov-key", "sk-wrong-key-00000000")
+    pg.click("#prov-save")
+    pg.wait_for_selector("#prov-msg:has-text('rejected')", timeout=8000)
+    pg.fill("#prov-key", GOOD_KEY)
+    pg.click("#prov-save")
+    pg.wait_for_selector("#prov-msg:has-text('Works')", timeout=8000)
+    assert pg.input_value("#prov-key") == ""
+    first = pg.locator("#providers li").first.inner_text()
+    assert "OpenAI" in first and "openai-smart-model" in first and GOOD_KEY not in pg.content()
+    pg.screenshot(path=os.path.join(ART, "6_models.png"))
+    assert svc.smart_llm.complete("hi") == "answer from openai-smart-model"
+    pg.click("#tabs button[data-view=main]")

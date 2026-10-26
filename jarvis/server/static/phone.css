@@ -116,6 +116,18 @@ button { cursor: pointer; }
 .choice input { accent-color: var(--amber); margin-top: 4px; }
 .choice .sub, .choices > .sub { display: block; color: var(--muted); font-size: 12.5px; margin: 0; }
 
+.prov { flex-wrap: wrap; }
+.prov.off > span:first-child { opacity: .5; }
+.prov-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.err-line { color: var(--danger) !important; }
+.pick { flex-basis: 100%; display: grid; gap: 6px; padding-top: 8px; }
+.pick select, .prov-form select, .prov-form input { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm);
+  background: var(--steel); border: 1px solid var(--line); color: var(--text); }
+.prov-form { display: grid; gap: 8px; margin-top: 12px; }
+.prov-form label, .pick label { font-size: 13px; color: var(--muted); }
+#prov-msg.ok { color: var(--ok); }
+#prov-msg:not(.ok):not(:empty) { color: var(--danger); }
+
 /* ---------- buttons ---------- */
 .primary, .ghost, .danger, .stack button, .row button { border-radius: 999px; padding: 12px 18px; border: 1px solid transparent; }
 .primary { background: var(--amber); color: #2a1a03; font-weight: 600; position: relative; overflow: hidden; }
@@ -157,3 +169,4 @@ button { cursor: pointer; }
 .dialer button { margin-top: 60px; }
 
 @media (prefers-reduced-motion: reduce) { #appr-yes.hold .fill { transition: none; } }
+.panel > p.sub, .prov-form p.sub { color: var(--muted); font-size: 13px; margin: 0 0 6px; }

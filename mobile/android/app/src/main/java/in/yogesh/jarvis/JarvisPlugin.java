@@ -15,11 +15,16 @@ import android.database.Cursor;
 import android.hardware.camera2.CameraManager;
 import android.location.Location;
 import android.location.LocationManager;
+import android.media.AudioFormat;
 import android.media.AudioManager;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.net.Uri;
 import android.os.BatteryManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.SystemClock;
+import android.util.Base64;
 import android.provider.AlarmClock;
 import android.provider.ContactsContract;
 import android.provider.Settings;
@@ -45,6 +50,7 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
+import java.io.ByteArrayOutputStream;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -115,6 +121,8 @@ public class JarvisPlugin extends Plugin {
     }
 
     private void wakeService(String action) {
+        boolean control = WakeWordService.ACTION_PAUSE.equals(action) || WakeWordService.ACTION_RESUME.equals(action);
+        if (control && !WakeWordService.isActive()) return;   // nothing to pause: don't start a stray service
         Intent i = new Intent(getContext(), WakeWordService.class).setAction(action);
         if (WakeWordService.ACTION_START.equals(action)) ContextCompat.startForegroundService(getContext(), i);
         else getContext().startService(i);
@@ -231,6 +239,118 @@ public class JarvisPlugin extends Plugin {
         if (getPermissionState("microphone") == PermissionState.GRANTED) listen(call);
         else call.reject("Microphone permission denied");
     }
+
+    // ------------------------------------------------------------------ recording for server-side Whisper
+    // Records straight from Android's microphone (not the WebView's), so it works on every phone.
+    // Stops ~1.3 s after you stop talking, after maxMs, after 7 s of silence, or when stopRecord() is called.
+    private volatile boolean recStop = false;
+    private volatile boolean recording = false;
+
+    @PluginMethod
+    public void record(PluginCall call) {
+        if (getPermissionState("microphone") != PermissionState.GRANTED) {
+            requestPermissionForAlias("microphone", call, "recordPermCallback");
+            return;
+        }
+        if (recording) { call.reject("Already listening"); return; }
+        recording = true;
+        recStop = false;
+        boolean wakeOn = WakeWordService.isActive();
+        wakeService(WakeWordService.ACTION_PAUSE);
+        final int maxMs = Math.max(2000, Math.min(30000, call.getInt("maxMs", 15000)));
+        new Thread(() -> {
+            try {
+                if (wakeOn) SystemClock.sleep(200);      // let the wake-word listener release the mic
+                call.resolve(recordUntilSilence(maxMs));
+            } catch (Exception e) {
+                call.reject("Couldn't record: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+            } finally {
+                recording = false;
+                wakeService(WakeWordService.ACTION_RESUME);
+            }
+        }, "jarvis-record").start();
+    }
+
+    @PermissionCallback
+    private void recordPermCallback(PluginCall call) {
+        if (getPermissionState("microphone") == PermissionState.GRANTED) record(call);
+        else call.reject("Microphone permission denied. Allow it in Settings > Apps > JARVIS > Permissions.");
+    }
+
+    @PluginMethod
+    public void stopRecord(PluginCall call) {
+        recStop = true;
+        call.resolve();
+    }
+
+    private JSObject recordUntilSilence(int maxMs) throws Exception {
+        final int rate = 16000;
+        int min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
+        AudioRecord rec;
+        try {
+            rec = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION, rate, AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT, Math.max(min, 3200 * 4));
+        } catch (SecurityException e) {
+            throw new Exception("microphone permission denied");
+        }
+        if (rec.getState() != AudioRecord.STATE_INITIALIZED) {
+            rec.release();
+            throw new Exception("the microphone is busy (another app may be using it)");
+        }
+        ByteArrayOutputStream pcm = new ByteArrayOutputStream();
+        short[] frame = new short[800];                  // 50 ms
+        boolean heard = false;
+        double noise = 300;                              // running background level (int16 RMS)
+        long start = SystemClock.elapsedRealtime(), lastLoud = start, lastLevel = 0;
+        rec.startRecording();
+        try {
+            while (!recStop) {
+                int n = rec.read(frame, 0, frame.length);
+                if (n < 0) throw new Exception("microphone read error " + n);
+                if (n == 0) continue;
+                double sum = 0;
+                for (int i = 0; i < n; i++) {
+                    sum += (double) frame[i] * frame[i];
+                    pcm.write(frame[i] & 0xff);
+                    pcm.write((frame[i] >> 8) & 0xff);
+                }
+                double rms = Math.sqrt(sum / n);
+                long now = SystemClock.elapsedRealtime();
+                noise = rms < noise ? rms : noise * 0.995 + rms * 0.005;   // fast down, slow up
+                if (rms > Math.max(400, noise * 3)) { heard = true; lastLoud = now; }
+                if (now - lastLevel > 100) {
+                    lastLevel = now;
+                    JSObject lv = new JSObject();
+                    lv.put("level", Math.min(1.0, rms / 3000.0));
+                    notifyListeners("level", lv);
+                }
+                if ((heard && now - lastLoud > 1300) || now - start > maxMs || (!heard && now - start > 7000)) break;
+            }
+        } finally {
+            try { rec.stop(); } catch (Exception ignored) { }
+            rec.release();
+        }
+        byte[] data = pcm.toByteArray();
+        JSObject o = new JSObject();
+        o.put("heard", heard);
+        o.put("ms", data.length / 32);
+        o.put("wav", Base64.encodeToString(wav(data, rate), Base64.NO_WRAP));
+        return o;
+    }
+
+    private static byte[] wav(byte[] pcm, int rate) {
+        byte[] out = new byte[44 + pcm.length];
+        int byteRate = rate * 2;
+        put(out, 0, "RIFF"); le32(out, 4, 36 + pcm.length); put(out, 8, "WAVE"); put(out, 12, "fmt ");
+        le32(out, 16, 16); le16(out, 20, 1); le16(out, 22, 1); le32(out, 24, rate); le32(out, 28, byteRate);
+        le16(out, 32, 2); le16(out, 34, 16); put(out, 36, "data"); le32(out, 40, pcm.length);
+        System.arraycopy(pcm, 0, out, 44, pcm.length);
+        return out;
+    }
+
+    private static void put(byte[] b, int off, String s) { for (int i = 0; i < 4; i++) b[off + i] = (byte) s.charAt(i); }
+    private static void le16(byte[] b, int off, int v) { b[off] = (byte) v; b[off + 1] = (byte) (v >> 8); }
+    private static void le32(byte[] b, int off, int v) { for (int i = 0; i < 4; i++) b[off + i] = (byte) (v >> (8 * i)); }
 
     // ------------------------------------------------------------------ text to speech (offline Android TTS)
     @PluginMethod

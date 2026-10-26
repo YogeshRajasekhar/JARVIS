@@ -81,6 +81,25 @@
           <span>Phone recognizer<span class="sub">Faster, can work offline, weaker with accents.</span></span></label>
         <p id="stt-note" class="sub"></p>
       </div>
+      <h3>Language models</h3>
+      <p class="sub">JARVIS tries these in order and falls back to the next one if a model fails or hits its limit.</p>
+      <ul id="providers" class="rows"></ul>
+      <form id="prov-form" class="prov-form" autocomplete="off">
+        <label for="prov-type">Add a provider</label>
+        <select id="prov-type"></select>
+        <div id="prov-key-wrap">
+          <label for="prov-key">API key</label>
+          <input id="prov-key" type="password" autocomplete="off" spellcheck="false" inputmode="text" maxlength="400">
+        </div>
+        <div id="prov-base-wrap" class="hidden">
+          <label for="prov-base">Server address</label>
+          <input id="prov-base" type="url" placeholder="https://..." autocomplete="off" spellcheck="false" maxlength="300">
+        </div>
+        <p id="prov-help" class="sub"></p>
+        <button id="prov-save" type="submit" class="primary">Test and add</button>
+        <p id="prov-msg" class="sub" role="status"></p>
+        <p class="sub">The key is sent once over your private connection, checked with a real request, and stored encrypted on your server. It never comes back to the phone.</p>
+      </form>
       <h3>Security</h3>
       <div class="lock">
         <button id="lockdown" class="danger">Lock down JARVIS</button>

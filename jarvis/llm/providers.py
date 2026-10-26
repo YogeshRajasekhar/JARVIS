@@ -42,21 +42,33 @@ class LLMError(Exception):
 # So providers can be given "auto" (or a name that later disappears): they then ask the provider which
 # models this key can use and pick the best match for the tier below.
 _NOT_CHAT = re.compile(r"whisper|tts|orpheus|guard|embed|imagen|image|veo|audio|live|transcri|moderation|aqa|learnlm|"
-                       r"computer-use|robotics|native-audio", re.I)
+                       r"computer-use|robotics|native-audio|dall-e|davinci|babbage|realtime|search|codex|instruct|"
+                       r"sora|ocr|rerank|vision-preview|-speech|playai", re.I)
 PREFS = {
     "groq": {"fast": [r"^llama-3\.1-8b-instant$", r"gpt-oss-20b", r"llama.*8b", r"qwen", r"gpt-oss", r"llama"],
              "smart": [r"^llama-3\.3-70b-versatile$", r"gpt-oss-120b", r"llama.*70b", r"qwen", r"gpt-oss", r"llama"]},
     "gemini": {"fast": [r"^gemini-[\d.]+-flash-lite$", r"^gemini-[\d.]+-flash$", r"flash", r"gemma"],
                "smart": [r"^gemini-[\d.]+-flash$", r"^gemini-[\d.]+-flash-[\w-]*$", r"flash", r"gemma"]},
     "openrouter": {"fast": [r"llama.*:free$", r"qwen.*:free$", r":free$"], "smart": [r"llama.*70b.*:free$", r"gpt-oss-120b:free$", r":free$"]},
+    # Paid providers: a small model for routing/extraction, the main model for conversation/planning.
+    "openai": {"fast": [r"^gpt-[\d.]+o?-mini$", r"^gpt-[\d.]+o?-nano$", r"^gpt-[\d.o]+-mini", r"mini"],
+               "smart": [r"^gpt-[\d.]+o?$", r"^gpt-[\d.]+o?-chat", r"^gpt-[\d.o]+$", r"^gpt-"]},
+    "anthropic": {"fast": [r"haiku"], "smart": [r"sonnet", r"opus"]},
+    "mistral": {"fast": [r"^mistral-small-latest$", r"small", r"ministral"], "smart": [r"^mistral-large-latest$", r"large", r"medium"]},
+    "deepseek": {"fast": [r"^deepseek-chat$"], "smart": [r"^deepseek-chat$"]},
+    "together": {"fast": [r"llama.*8b.*instruct", r"8b"], "smart": [r"llama.*70b.*instruct", r"70b"]},
 }
+
+_DATE = re.compile(r"-?\d{4}-\d{2}-\d{2}|-\d{8}|-\d{4}(?=$|-)")
 
 
 def _rank(model_id: str) -> tuple:
-    """Newer version first, stable before preview/experimental."""
-    nums = tuple(float(x) for x in re.findall(r"\d+(?:\.\d+)?", model_id)[:3]) or (0.0,)
-    unstable = 1 if re.search(r"preview|exp|beta", model_id, re.I) else 0
-    return (-unstable, nums)
+    """Newer version first; stable aliases before preview/experimental and before dated snapshots."""
+    plain = _DATE.sub("", model_id)
+    nums = tuple(float(x) for x in re.findall(r"\d+(?:\.\d+)?", plain)[:3]) or (0.0,)
+    unstable = 1 if re.search(r"preview|exp|beta|alpha", model_id, re.I) else 0
+    dated = 1 if _DATE.search(model_id) else 0
+    return (-unstable, -dated, nums)
 
 
 def pick_model(available: list[str], prefs: list[str], avoid: Optional[set] = None) -> Optional[str]:
@@ -69,7 +81,7 @@ def pick_model(available: list[str], prefs: list[str], avoid: Optional[set] = No
 
 
 def _is_reasoning(model: Optional[str]) -> bool:
-    return bool(model and re.search(r"gpt-oss|deepseek-r|qwq|reasoning|-r1\b|magistral|\bo[134]-", model, re.I))
+    return bool(model and re.search(r"gpt-oss|deepseek-r|qwq|reasoning|-r1\b|magistral|^o[1-9](-|$)|^gpt-5", model, re.I))
 
 
 def _model_missing(status: int, text: str) -> bool:
@@ -126,6 +138,8 @@ class OpenAICompatibleLLM:
         self._client = httpx.Client(timeout=timeout, headers=headers, transport=transport)
         self._json_mode_supported = True
         self._reasoning_params = True
+        self._temperature_ok = True
+        self._max_key = "max_tokens"
         self._tried: set = set()
 
     def list_models(self) -> list[str]:
@@ -144,56 +158,72 @@ class OpenAICompatibleLLM:
         self.model, self.name = chosen, f"{self.family}:{chosen}"
         return chosen
 
+    def _body(self, prompt, system, history, json, temperature, max_tokens) -> dict:
+        body = {"model": self.model, "messages": _messages(system, prompt, history)}
+        budget = max_tokens + 1024 if _is_reasoning(self.model) else max_tokens
+        body[self._max_key] = budget          # reasoning models: thinking counts against the budget
+        if self._temperature_ok:
+            body["temperature"] = temperature
+        if _is_reasoning(self.model) and self._reasoning_params:
+            body["reasoning_effort"] = "low"
+            if self.family == "groq":
+                body["reasoning_format"] = "hidden"
+        if json and self._json_mode_supported:
+            body["response_format"] = {"type": "json_object"}
+        return body
+
+    def _adapt(self, text: str, body: dict) -> bool:
+        """Learn from a 400 which optional parameter this model rejects. True if something changed."""
+        t = text.lower()
+        if "max_tokens" in t and "max_completion_tokens" in t and self._max_key == "max_tokens":
+            self._max_key = "max_completion_tokens"       # newer OpenAI models
+            return True
+        if "temperature" in t and self._temperature_ok and "temperature" in body:
+            self._temperature_ok = False                  # reasoning models only allow the default
+            return True
+        if ("reasoning" in t) and self._reasoning_params and "reasoning_effort" in body:
+            self._reasoning_params = False
+            return True
+        if ("response_format" in t or "json" in t) and self._json_mode_supported and "response_format" in body:
+            self._json_mode_supported = False
+            return True
+        return False
+
     def complete(self, prompt: str, system: Optional[str] = None, *, json: bool = False,
                  temperature: float = 0.0, max_tokens: int = 800, history=None, **_ignored) -> str:
         if self.model is None:
             self.resolve()
-        for attempt in range(2):
-            body = {"model": self.model, "messages": _messages(system, prompt, history),
-                    "temperature": temperature, "max_tokens": max_tokens}
-            if _is_reasoning(self.model):
-                # Reasoning models think before answering, and the thinking counts against max_tokens.
-                # Keep the thinking short and leave room for the actual answer.
-                body["max_tokens"] = max_tokens + 1024
-                if self._reasoning_params:
-                    body["reasoning_effort"] = "low"
-                    if self.family == "groq":
-                        body["reasoning_format"] = "hidden"
-            if json and self._json_mode_supported:
-                body["response_format"] = {"type": "json_object"}
+        switched = False
+        for _ in range(6):
+            body = self._body(prompt, system, history, json, temperature, max_tokens)
             try:
                 r = self._client.post(self._url, json=body)
             except httpx.HTTPError as e:
                 raise LLMUnavailable(f"{self.name}: network error {e}") from e
-            if r.status_code == 400 and "response_format" in body and not _model_missing(400, r.text):
-                # Some models reject JSON mode. Remember that and retry once without it.
-                self._json_mode_supported = False
-                body.pop("response_format")
-                r = self._client.post(self._url, json=body)
-            if r.status_code == 400 and "reasoning" in r.text.lower() and "reasoning_effort" in body:
-                self._reasoning_params = False   # this model/provider doesn't take reasoning options
-                body.pop("reasoning_effort", None)
-                body.pop("reasoning_format", None)
-                r = self._client.post(self._url, json=body)
-            if _model_missing(r.status_code, r.text) and attempt == 0:
+            if _model_missing(r.status_code, r.text) and not switched:
+                switched = True
                 self._tried.add(self.model)
                 self.resolve()           # model retired or not allowed for this key: pick another
+                continue
+            if r.status_code == 400 and self._adapt(r.text, body):
                 continue
             if r.status_code == 429:
                 retry = float(r.headers.get("retry-after", "30") or 30)
                 raise LLMRateLimited(f"{self.name}: rate limited", retry_after=retry)
+            if r.status_code in (401, 403):
+                raise LLMUnavailable(f"{self.name}: key rejected (HTTP {r.status_code})")
             if r.status_code >= 400:
                 raise LLMUnavailable(f"{self.name}: HTTP {r.status_code} {r.text[:200]}")
             try:
-                content = r.json()["choices"][0]["message"]["content"] or ""
-            except (KeyError, IndexError, ValueError) as e:
+                choice = r.json()["choices"][0]
+                content = choice["message"].get("content") or ""
+            except (KeyError, IndexError, ValueError, TypeError) as e:
                 raise LLMUnavailable(f"{self.name}: malformed response {r.text[:200]}") from e
             if not content.strip():
                 # An empty answer is a failure, not a result: let the fallback chain try the next provider.
-                raise LLMUnavailable(f"{self.name}: empty reply (finish_reason="
-                                     f"{r.json()['choices'][0].get('finish_reason')})")
+                raise LLMUnavailable(f"{self.name}: empty reply (finish_reason={choice.get('finish_reason')})")
             return content
-        raise LLMUnavailable(f"{self.name}: no working model")
+        raise LLMUnavailable(f"{self.name}: request kept failing")
 
 
 class GeminiLLM:
@@ -294,23 +324,65 @@ class GeminiLLM:
         raise LLMUnavailable(f"{self.name}: no working model")
 
 
-class ClaudeLLM:
-    """Optional: wraps v1's Claude client (used only if ANTHROPIC_API_KEY is set)."""
+class AnthropicLLM:
+    """Anthropic Messages API over plain HTTPS (no SDK needed)."""
 
-    def __init__(self, api_key: str, model: str):
-        from src.llm.client import ClaudeLLMClient  # lazy: anthropic SDK only needed here
+    BASE = "https://api.anthropic.com/v1"
 
-        self.name = f"claude:{model}"
-        self._inner = ClaudeLLMClient(model=model, api_key=api_key)
+    def __init__(self, api_key: str, model: str = "auto", tier: str = "fast", timeout: float = 45.0,
+                 transport: Optional[httpx.BaseTransport] = None):
+        self.family, self.tier = "anthropic", tier
+        self.model = None if not model or model == "auto" else model
+        self.name = f"anthropic:{self.model or 'auto'}"
+        self._client = httpx.Client(timeout=timeout, transport=transport, headers={
+            "x-api-key": api_key, "anthropic-version": "2023-06-01", "content-type": "application/json"})
+        self._tried: set = set()
+
+    def list_models(self) -> list[str]:
+        r = self._client.get(self.BASE + "/models", params={"limit": 100})
+        if r.status_code >= 400:
+            raise LLMUnavailable(f"anthropic: can't list models (HTTP {r.status_code}) {r.text[:160]}")
+        return [m["id"] for m in r.json().get("data", []) if m.get("id")]
+
+    def resolve(self) -> str:
+        chosen = pick_model(self.list_models(), PREFS["anthropic"][self.tier], avoid=self._tried)
+        if not chosen:
+            raise LLMUnavailable("anthropic: this key has no usable models")
+        self.model, self.name = chosen, f"anthropic:{chosen}"
+        return chosen
 
     def complete(self, prompt: str, system: Optional[str] = None, *, json: bool = False,
                  temperature: float = 0.0, max_tokens: int = 800, history=None, **_ignored) -> str:
-        from src.llm.client import LLMError as V1Error
-
-        try:
-            return self._inner.complete(prompt, system=system, max_tokens=max_tokens, temperature=temperature)
-        except V1Error as e:
-            raise LLMUnavailable(str(e)) from e
+        if self.model is None:
+            self.resolve()
+        msgs = [{"role": m["role"], "content": m["content"]} for m in (history or [])
+                if m.get("role") in ("user", "assistant") and m.get("content")]
+        while msgs and msgs[0]["role"] != "user":
+            msgs.pop(0)                                  # the API requires a user turn first
+        msgs.append({"role": "user", "content": prompt})
+        for attempt in range(2):
+            body = {"model": self.model, "max_tokens": max_tokens, "messages": msgs, "temperature": temperature}
+            if system:
+                body["system"] = system
+            try:
+                r = self._client.post(self.BASE + "/messages", json=body)
+            except httpx.HTTPError as e:
+                raise LLMUnavailable(f"{self.name}: network error {e}") from e
+            if _model_missing(r.status_code, r.text) and attempt == 0:
+                self._tried.add(self.model)
+                self.resolve()
+                continue
+            if r.status_code in (429, 529):
+                raise LLMRateLimited(f"{self.name}: rate limited", retry_after=float(r.headers.get("retry-after", "30") or 30))
+            if r.status_code in (401, 403):
+                raise LLMUnavailable(f"{self.name}: key rejected (HTTP {r.status_code})")
+            if r.status_code >= 400:
+                raise LLMUnavailable(f"{self.name}: HTTP {r.status_code} {r.text[:200]}")
+            text = "".join(b.get("text", "") for b in r.json().get("content", []) if b.get("type") == "text")
+            if not text.strip():
+                raise LLMUnavailable(f"{self.name}: empty reply")
+            return text
+        raise LLMUnavailable(f"{self.name}: no working model")
 
 
 class FallbackLLM:
@@ -331,6 +403,15 @@ class FallbackLLM:
         self._lock = threading.Lock()
         self.last_provider: Optional[str] = None
         self.last_errors: dict[str, str] = {}
+
+    def replace(self, providers: list) -> None:
+        """Swap the provider list in place (settings changed in the app). Agents keep their reference."""
+        with self._lock:
+            self.providers = list(providers)
+            self._cooldown_until.clear()
+            self._cache.clear()
+            self.last_errors.clear()
+            self.last_provider = None
 
     def _key(self, prompt, system, kwargs) -> Optional[str]:
         if kwargs.get("temperature", 0.0) != 0.0 or kwargs.get("history"):
@@ -376,36 +457,9 @@ class FallbackLLM:
         raise LLMUnavailable("All LLM providers failed: " + " | ".join(errors))
 
 
-def build_llms(settings) -> tuple[FallbackLLM, FallbackLLM]:
-    """Returns (fast, smart) fallback chains from whatever keys are configured."""
-    from jarvis.llm.rule_llm import RuleLLM
+def build_llms(settings, db=None) -> tuple[FallbackLLM, FallbackLLM]:
+    """Returns (fast, smart) fallback chains from .env keys plus any keys added in the app (when db is given)."""
+    from jarvis.llm.registry import LLMRegistry
 
-    fast, smart = [], []
-    if settings.llm_mode != "offline":
-        if settings.groq_api_key:
-            g = "https://api.groq.com/openai/v1"
-            fast.append(OpenAICompatibleLLM("groq", g, settings.groq_api_key, settings.groq_fast_model, family="groq", tier="fast"))
-            smart.append(OpenAICompatibleLLM("groq", g, settings.groq_api_key, settings.groq_smart_model, family="groq", tier="smart"))
-        if settings.gemini_api_key:
-            fast.append(GeminiLLM(settings.gemini_api_key, settings.gemini_fast_model, tier="fast"))
-            smart.append(GeminiLLM(settings.gemini_api_key, settings.gemini_smart_model, tier="smart"))
-        if settings.openrouter_api_key:
-            for tier, lst in (("fast", fast), ("smart", smart)):
-                lst.append(OpenAICompatibleLLM(
-                    "openrouter", "https://openrouter.ai/api/v1", settings.openrouter_api_key, settings.openrouter_model,
-                    extra_headers={"X-Title": "JARVIS personal assistant"}, family="openrouter", tier=tier))
-        if settings.ollama_url:
-            ol = OpenAICompatibleLLM("ollama", settings.ollama_url.rstrip("/") + "/v1", "", settings.ollama_model,
-                                     timeout=120, family="ollama")
-            fast.append(ol)
-            smart.append(ol)
-        if settings.anthropic_api_key:
-            try:
-                fast.append(ClaudeLLM(settings.anthropic_api_key, "claude-haiku-4-5-20251001"))
-                smart.append(ClaudeLLM(settings.anthropic_api_key, "claude-haiku-4-5-20251001"))
-            except Exception as e:  # anthropic SDK missing etc.
-                log.warning("Claude provider disabled: %s", e)
-    rule = RuleLLM()
-    fast.append(rule)
-    smart.append(rule)
-    return FallbackLLM(fast, name="fast"), FallbackLLM(smart, name="smart")
+    reg = LLMRegistry(settings, db)
+    return FallbackLLM(reg.chain("fast"), name="fast"), FallbackLLM(reg.chain("smart"), name="smart")

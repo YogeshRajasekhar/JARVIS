@@ -168,7 +168,7 @@ def test_stt_uses_vocabulary_prompt(tmp_path, monkeypatch):
             seen.update(audio=audio, filename=filename, prompt=prompt)
             return "what's my battery"
 
-    monkeypatch.setattr(speech, "build_stt", lambda settings: FakeWhisper())
+    monkeypatch.setattr(speech, "build_stt", lambda *a, **k: FakeWhisper())
     app = make_app(tmp_path)
     app.state.svc.graph.ensure_entity("Kavya", "person")
     r = TestClient(app).post("/api/stt", content=b"\x1aE\xdf\xa3fake", headers={**H, "Content-Type": "audio/webm;codecs=opus"})
@@ -183,5 +183,19 @@ def test_stt_failure_is_clean(tmp_path, monkeypatch):
         def transcribe(self, *a, **k):
             raise RuntimeError("groq down")
 
-    monkeypatch.setattr(speech, "build_stt", lambda settings: Broken())
+    monkeypatch.setattr(speech, "build_stt", lambda *a, **k: Broken())
     assert TestClient(make_app(tmp_path)).post("/api/stt", content=b"x", headers=H).status_code == 502
+
+
+@pytest.mark.parametrize("text,segments,expected", [
+    ("Thank you for watching!", None, ""),                                   # classic phantom from silence
+    ("Yogesh, JARVIS, Arun Kumar, Priya", None, ""),                         # echo of the hint
+    ("remind me to call Arun at 7", None, "remind me to call Arun at 7"),   # real speech with a name
+    ("", [{"text": " set an alarm for six", "no_speech_prob": 0.05, "avg_logprob": -0.2},
+          {"text": " Thank you.", "no_speech_prob": 0.92, "avg_logprob": -0.3}], "set an alarm for six"),
+    ("", [{"text": " la la la la la la la la", "no_speech_prob": 0.1, "avg_logprob": -0.2, "compression_ratio": 3.1}], ""),
+])
+def test_whisper_hallucination_filter(text, segments, expected):
+    from jarvis.voice.speech import clean_transcript, vocabulary_prompt
+    hint = vocabulary_prompt("Yogesh", ["Arun Kumar", "Priya"])
+    assert clean_transcript(text, segments, hint) == expected

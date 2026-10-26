@@ -59,6 +59,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- Each of these is only used after you allow it in JARVIS AND in the Android dialog. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Required by the in-app web page's microphone (Capacitor asks for both); granted automatically. -->
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />

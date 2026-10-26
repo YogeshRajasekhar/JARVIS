@@ -209,8 +209,36 @@ async function listen() {
   // Some browsers never fire onend if recognition stalls; never leave the mic stuck "on".
   setTimeout(() => { if (listening && rec) { try { rec.abort(); } catch {} listening = false; $("mic").classList.remove("live"); setState("idle"); } }, 15000);
 }
+async function transcribeAndSend(blob) {
+  setState("thinking");
+  const r = await api("/api/stt", { method: "POST", body: blob, raw: true }).catch(() => null);
+  setState("idle");
+  if (r?.text?.trim()) send(r.text, "voice");
+  else if (r) note("I couldn't make out the words. Try again, a little closer to the phone.");
+  else note("Transcription failed. Check Settings > Language models has a Groq or OpenAI key, or switch voice input to the phone.");
+}
+
+async function recordNative() {
+  // In the app: record with Android's own microphone API (the in-app browser's microphone is unreliable).
+  listening = true; setState("listening"); $("mic").classList.add("live");
+  stopRecording = () => Native.stopRecord?.();
+  let r = null, err = null;
+  try { r = await Native.record({ maxMs: 15000 }); } catch (e) { err = String(e?.message || e); }
+  stopRecording = null; listening = false; $("mic").classList.remove("live"); orb.level(0);
+  if (err) {
+    setState("idle");
+    note(/permission/i.test(err) ? "JARVIS needs the microphone. Allow it in Settings > Apps > JARVIS > Permissions." : err);
+    return;
+  }
+  if (!r?.heard) { setState("idle"); note("I didn't hear anything. Tap the mic and speak."); return; }
+  const bin = atob(r.wav), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  await transcribeAndSend(new Blob([bytes], { type: "audio/wav" }));
+}
+
 async function recordForServer() {
   // Records until you stop talking (or tap the mic), then transcribes on your server with Whisper.
+  if (Native?.record) return recordNative();
   await Native?.pauseWake?.();
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }); }
@@ -245,11 +273,8 @@ async function recordForServer() {
     stream.getTracks().forEach((t) => t.stop()); actx.close();
     listening = false; $("mic").classList.remove("live");
     if (!heard) { setState("idle"); Native?.resumeWake?.(); note("I didn't hear anything. Tap the mic and speak."); return; }
-    setState("thinking");
-    const r = await api("/api/stt", { method: "POST", body: new Blob(chunks, { type: mr.mimeType || "audio/webm" }), raw: true }).catch(() => null);
-    setState("idle"); Native?.resumeWake?.();
-    if (r?.text?.trim()) send(r.text, "voice");
-    else note("Transcription failed. Check the server's Groq key, or switch voice input to the phone in Settings.");
+    Native?.resumeWake?.();
+    await transcribeAndSend(new Blob(chunks, { type: mr.mimeType || "audio/webm" }));
   };
 }
 $("mic").onclick = () => {
@@ -316,6 +341,17 @@ async function api(path, { method = "GET", body, raw = false } = {}) {
   const r = await fetch(SERVER + path, { method, headers, body: raw ? body : body && JSON.stringify(body) });
   if (r.status === 401) { unpair("The pairing token was rejected. Pair again."); return null; }
   return r.ok ? r.json() : null;
+}
+
+async function apiDetail(path, { method = "GET", body } = {}) {
+  const headers = { Authorization: `Bearer ${token}` };
+  if (body) headers["Content-Type"] = "application/json";
+  let r;
+  try { r = await fetch(SERVER + path, { method, headers, body: body && JSON.stringify(body) }); }
+  catch { return { ok: false, error: "Can't reach the server." }; }
+  if (r.status === 401) { unpair("The pairing token was rejected. Pair again."); return { ok: false, error: "Not paired." }; }
+  const data = await r.json().catch(() => ({}));
+  return r.ok ? { ok: true, data } : { ok: false, error: data?.detail || `Server error ${r.status}` };
 }
 
 // One live socket at a time. Every handler is bound to ITS socket, so a late event from an
@@ -542,15 +578,113 @@ function renderClock() {
   rows("reminders", phone.reminders, (r) => { const li = el("li", "", r.label); li.append(el("span", "mode", new Date(r.at_iso).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }))); return li; });
   rows("smslog", phone.sms, (s) => { const li = el("li", "", s.text); li.append(el("span", "mode", s.name || s.number)); return li; });
 }
+// ------------------------------------------------------------------ language models (Settings)
+let llmState = null;
+function renderModels(state) {
+  llmState = state;
+  serverStt = !!state.server_stt;
+  renderVoiceChoice();
+  const sel = $("prov-type");
+  if (!sel.options.length) {
+    for (const c of state.catalog) sel.append(new Option(c.label, c.type));
+    sel.value = "openai";
+  }
+  updateProviderForm();
+  const ul = $("providers"); ul.replaceChildren();
+  if (!state.providers.length) { ul.append(el("li", "empty", "No models yet. JARVIS uses its offline rule engine. Add a key below.")); return; }
+  state.providers.forEach((p, i) => {
+    const li = el("li", "prov" + (p.enabled ? "" : " off"));
+    const info = el("span", "");
+    info.append(el("span", "", `${i + 1}. ${p.label}`));
+    const where = p.source === "env" ? "key from server .env" : `key ${p.key_hint}`;
+    info.append(el("span", "sub", `${where}. Quick tasks: ${p.model_fast}. Conversation: ${p.model_smart}.`));
+    if (p.last_error) info.append(el("span", "sub err-line", `Last error: ${p.last_error}`));
+    li.append(info);
+    const actions = el("span", "prov-actions");
+    const btn = (label, title, fn) => { const b = el("button", "revoke", label); b.title = title; b.setAttribute("aria-label", title); b.onclick = fn; actions.append(b); return b; };
+    if (i > 0) btn("Up", `Move ${p.label} up`, () => moveProvider(i, -1));
+    btn(p.enabled ? "Off" : "On", p.enabled ? `Stop using ${p.label}` : `Use ${p.label}`, () => patchProvider(p.id, { enabled: !p.enabled }));
+    btn("Models", `Choose models for ${p.label}`, () => chooseModels(p, li));
+    if (p.source !== "env") btn("Remove", `Remove ${p.label}`, () => removeProvider(p));
+    li.append(actions);
+    ul.append(li);
+  });
+}
+function updateProviderForm() {
+  const c = llmState?.catalog.find((x) => x.type === $("prov-type").value);
+  if (!c) return;
+  $("prov-base-wrap").classList.toggle("hidden", !c.needs_base);
+  $("prov-key-wrap").classList.toggle("hidden", !!c.no_key);
+  $("prov-help").textContent = c.help ? `Get a key: ${c.help}` : (c.no_key ? "No key needed. Enter the address where Ollama runs." : "");
+}
+$("prov-type").onchange = updateProviderForm;
+function modelsMsg(t, ok = false) { const m = $("prov-msg"); m.textContent = t; m.classList.toggle("ok", ok); }
+async function loadModels() {
+  const r = await apiDetail("/api/llm");
+  if (r.ok) renderModels(r.data); else modelsMsg(r.error);
+}
+$("prov-form").onsubmit = async (e) => {
+  e.preventDefault();
+  const body = { type: $("prov-type").value, api_key: $("prov-key").value.trim(), base_url: $("prov-base").value.trim() };
+  const btnEl = $("prov-save"); btnEl.disabled = true; modelsMsg("Testing the key with a real request...");
+  const r = await apiDetail("/api/llm/providers", { method: "POST", body });
+  btnEl.disabled = false;
+  if (!r.ok) { modelsMsg(r.error); return; }
+  $("prov-key").value = "";                       // never keep the key on the phone
+  const m = r.data.result?.models || {};
+  modelsMsg(`Works. Now first in line. Quick tasks: ${m.fast}. Conversation: ${m.smart}.`, true);
+  renderModels(r.data);
+};
+async function patchProvider(id, body) {
+  modelsMsg(body.model_fast || body.model_smart ? "Testing that model..." : "");
+  const r = await apiDetail(`/api/llm/providers/${encodeURIComponent(id)}`, { method: "POST", body });
+  if (!r.ok) { modelsMsg(r.error); return; }
+  if (body.model_fast || body.model_smart) modelsMsg("Model switched.", true);
+  renderModels(r.data);
+}
+async function removeProvider(p) {
+  if (!confirm(`Remove ${p.label}? Its key is deleted from the server.`)) return;
+  const r = await apiDetail(`/api/llm/providers/${encodeURIComponent(p.id)}`, { method: "DELETE" });
+  if (r.ok) { modelsMsg(`${p.label} removed.`, true); renderModels(r.data); } else modelsMsg(r.error);
+}
+async function moveProvider(i, d) {
+  const ids = llmState.providers.map((p) => p.id);
+  [ids[i], ids[i + d]] = [ids[i + d], ids[i]];
+  const r = await apiDetail("/api/llm/order", { method: "POST", body: { ids } });
+  if (r.ok) renderModels(r.data); else modelsMsg(r.error);
+}
+async function chooseModels(p, li) {
+  const old = li.querySelector(".pick"); if (old) { old.remove(); return; }
+  const box = el("div", "pick");
+  box.append(el("span", "sub", "Loading the models this key can use..."));
+  li.append(box);
+  const r = await apiDetail(`/api/llm/providers/${encodeURIComponent(p.id)}/models`);
+  box.replaceChildren();
+  if (!r.ok) { box.append(el("span", "sub err-line", r.error)); return; }
+  const make = (label, current, field) => {
+    const lab = el("label", "", label); const s2 = el("select"); s2.id = `${p.id}-${field}`; lab.htmlFor = s2.id;
+    s2.append(new Option("Automatic (best available)", "auto"));
+    for (const m of r.data.models) s2.append(new Option(m, m));
+    s2.value = r.data.models.includes(current) ? current : "auto";
+    box.append(lab, s2); return s2;
+  };
+  const f = make("Quick tasks (routing, commands)", p.configured_fast, "fast");
+  const g = make("Conversation and planning", p.configured_smart, "smart");
+  const save = el("button", "primary", "Save models");
+  save.onclick = () => patchProvider(p.id, { model_fast: f.value, model_smart: g.value });
+  box.append(save);
+}
+
 function renderVoiceChoice() {
   document.querySelectorAll("input[name=stt]").forEach((r) => {
     r.checked = r.value === sttMode;
     r.onchange = () => { sttMode = r.value; store.set("jarvis_stt", sttMode); };
   });
-  $("stt-note").textContent = serverStt ? "" : "Whisper needs a Groq key on the server; until then the phone recognizer is used.";
+  $("stt-note").textContent = serverStt ? "" : "Whisper needs a Groq or OpenAI key (Language models below); until then the phone recognizer is used.";
 }
 async function loadSecurity() {
   renderVoiceChoice();
+  loadModels();
   const p = await api("/api/permissions"); const a = await api("/api/audit");
   if (!p) return;
   $("unlock").classList.toggle("hidden", !p.locked);

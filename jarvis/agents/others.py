@@ -256,13 +256,29 @@ class PlannerAgent(BaseAgent):
 
 # ============================================================================ Chat / persona
 class ChatAgent(BaseAgent):
+    """
+    Small talk and general questions. Grounded: it only sees facts from memory, and the prompt forbids
+    inventing personal details. Low temperature, because a creative assistant is a hallucinating assistant.
+    """
     name = "chat"
 
+    def _facts(self, text: str) -> str:
+        g = self.svc.graph
+        lines = [f"The user's name is {self.svc.settings.user_name}. Time zone {self.svc.settings.timezone}."]
+        me = g.describe_node("self:me", max_edges=8)
+        if me:
+            lines.append(me)
+        ctx = g.context_for(text)
+        if ctx:
+            lines.append(ctx)
+        return "\n".join(lines)
+
     def handle(self, text: str, ctx: TurnContext) -> AgentReply:
-        system = PERSONA.format(user_name=self.svc.settings.user_name, now=ctx.now.strftime("%A %d %B, %I:%M %p"))
+        system = PERSONA.format(user_name=self.svc.settings.user_name,
+                                now=ctx.now.strftime("%A %d %B, %I:%M %p"), facts=self._facts(text))
         try:
-            reply = self.svc.smart_llm.complete(f"User: {text}", system=system, temperature=0.6, max_tokens=200,
-                                                task="chat", history=ctx.history[-6:])
+            reply = self.svc.smart_llm.complete(f"User: {text}", system=system, temperature=0.2, max_tokens=220,
+                                                task="chat", history=ctx.history[-4:])
         except Exception:
             reply = "I'm having trouble reaching my language model. Direct commands still work."
         reply = re.sub(r"[*_#`]", "", reply).strip()

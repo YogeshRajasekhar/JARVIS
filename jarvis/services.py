@@ -46,6 +46,7 @@ class Services:
     device: DeviceBridge
     clock: Callable[[], datetime] = None
     integration_modes: dict = field(default_factory=dict)
+    llm_registry: object = None
 
     def now(self) -> datetime:
         return self.clock() if self.clock else datetime.now(ZoneInfo(self.settings.timezone))
@@ -312,8 +313,10 @@ def build_services(settings: Optional[Settings] = None, *, db: Optional[Database
 
     settings = settings or Settings()
     db = db or Database(settings.db_path, settings.data_key or None)
+    from jarvis.llm.registry import LLMRegistry
+    registry = LLMRegistry(settings, db)
     if fast_llm is None or smart_llm is None:
-        f, s = build_llms(settings)
+        f, s = build_llms(settings, db)
         fast_llm, smart_llm = fast_llm or f, smart_llm or s
     broker = PermissionBroker(db)
     modes = {}
@@ -354,7 +357,8 @@ def build_services(settings: Optional[Settings] = None, *, db: Optional[Database
     svc = Services(settings=settings, db=db, graph=KnowledgeGraph(db, settings.user_name),
                    executor=ActionExecutor(db, broker), broker=broker, fast_llm=fast_llm, smart_llm=smart_llm,
                    calendar=calendar, mail=mail, slack=slack, github=github, places=places,
-                   device=device or SimulatedDevice(), clock=clock, integration_modes=modes)
+                   device=device or SimulatedDevice(), clock=clock, integration_modes=modes,
+                   llm_registry=registry)
     register_tools(svc)
     if settings.seed_demo_data if seed is None else seed:
         seed_demo(svc)

@@ -1190,3 +1190,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-26
 
 **Fact of the day:** The name Jeep came from the abbreviation used in the army. G.P. for `General Purpose` vehicle.
+
+## 2026-10-26
+
+**Advice of the day:** Most things are not as bad as you think they are.

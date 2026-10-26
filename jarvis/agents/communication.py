@@ -81,6 +81,9 @@ class CommunicationAgent(BaseAgent):
         if details:
             prompt += f"\nDetails: {redact(details)}"
         system = DRAFT.format(user_name=self.svc.settings.user_name, tone=tone or "friendly and professional")
+        about = self.svc.db.kv_get("about_me") or ""
+        if about:
+            system += f"\n\nABOUT THE SENDER (for tone and sign-off only, never as facts to add):\n{about[:800]}"
         try:
             return complete_json(self.svc.smart_llm, DraftOut, system, prompt, task="draft", max_tokens=500)
         except StructuredOutputError:

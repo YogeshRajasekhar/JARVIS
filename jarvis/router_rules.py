@@ -40,6 +40,9 @@ RULES: dict[str, list[tuple[str, float]]] = {
     "briefing": [
         (r"\b(brief me|briefing|catch me up|what did i miss|my day|daily summary|morning summary|today's summary)\b", 4),
         (r"\bwhat'?s (up|new) today\b", 3), (r"\bwhat'?s up\b", 1),
+        (r"\b(overnight|over night|while i (was )?(slept|asleep|sleeping|away)|morning report|night report|"
+         r"since i (went to bed|slept|left)|what happened (last night|overnight))\b", 5),
+        (r"\b(anyone|anybody|someone|somebody|people|who)\b.{0,30}\b(mad|angry|upset|annoyed|pissed|unhappy|frustrated|cross)\b", 5),
     ],
     "planner": [
         (r"\b(plan my|help me plan|prepare for|prioriti[sz]e|organi[sz]e my|reorgani[sz]e)\b", 3.5),

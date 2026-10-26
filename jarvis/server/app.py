@@ -89,6 +89,16 @@ class OrderIn(BaseModel):
     ids: list[str] = Field(max_length=30)
 
 
+class BriefIn(BaseModel):
+    enabled: bool = False
+    time: str = Field("06:00", pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    drafts: bool = True
+
+
+class ProfileIn(BaseModel):
+    about: str = Field("", max_length=2000)
+
+
 class Guard:
     """Token check + per-IP lockout after repeated failures."""
 
@@ -313,6 +323,61 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
         except RegistryError as e:
             raise HTTPException(400, str(e))
 
+    # ------------------------------------------------------------------ morning call + "about you"
+    from jarvis.core.redaction import redact as _redact
+
+    def brief_settings() -> dict:
+        return {"enabled": False, "time": "06:00", "drafts": True, **(svc.db.kv_get("brief_settings", {}) or {})}
+
+    @app.get("/api/brief", dependencies=[Depends(auth)])
+    async def brief_get():
+        return brief_settings()
+
+    @app.post("/api/brief", dependencies=[Depends(auth)])
+    async def brief_set(b: BriefIn):
+        svc.db.kv_set("brief_settings", b.model_dump())
+        svc.db.audit("user", "brief.settings", b.model_dump(), "done")
+        return brief_settings()
+
+    @app.get("/api/profile", dependencies=[Depends(auth)])
+    async def profile_get():
+        return {"about": svc.db.kv_get("about_me") or "", "user_name": settings.user_name}
+
+    @app.post("/api/profile", dependencies=[Depends(auth)])
+    async def profile_set(p: ProfileIn):
+        clean = _redact(p.about.strip())          # never keep OTPs, card or ID numbers, even if pasted
+        svc.db.kv_set("about_me", clean)
+        svc.db.audit("user", "profile.update", {"chars": len(clean)}, "done")
+        return {"about": clean, "user_name": settings.user_name}
+
+    # ------------------------------------------------------------------ in-app updates
+    from jarvis.appupdate import AppUpdater
+
+    data_dir = os.path.dirname(os.path.abspath(svc.db.path)) if svc.db.path != ":memory:" else os.path.abspath("./data")
+    updater = AppUpdater(svc.db, data_dir, settings.update_repo) if settings.update_repo else None
+    app.state.updater = updater
+
+    @app.get("/api/app/update", dependencies=[Depends(auth)])
+    async def app_update():
+        if not updater:
+            return {"available": None, "disabled": True}
+        return updater.status()
+
+    @app.post("/api/app/check", dependencies=[Depends(auth)])
+    async def app_check():
+        if not updater:
+            raise HTTPException(404, "updates are disabled on this server")
+        return await asyncio.to_thread(updater.check)
+
+    @app.get("/api/app/apk", dependencies=[Depends(auth)])
+    async def app_apk():
+        path = updater.apk_path() if updater else None
+        if not path:
+            raise HTTPException(404, "no app update prepared yet")
+        info = updater.current()
+        return FileResponse(path, media_type="application/vnd.android.package-archive",
+                            filename=f"jarvis-{info['code']}.apk", headers={"X-Sha256": info["sha256"]})
+
     @app.post("/api/tts", dependencies=[Depends(auth)])
     async def tts(m: MessageIn):
         from jarvis.voice.speech import build_tts
@@ -434,9 +499,43 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
                 log.warning("backup failed: %s", ex)
             await asyncio.sleep(24 * 3600)
 
+    async def triage_loop():
+        """Sort new mail every 30 min. Reply drafts only overnight (21:00 until the morning call)."""
+        from jarvis.agents.triage import InboxTriage
+        await asyncio.sleep(60)
+        tri = InboxTriage(svc)
+        while True:
+            try:
+                bs = brief_settings()
+                now = svc.now()
+                hh, mm = map(int, bs["time"].split(":"))
+                wake = now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+                night = now.hour >= 21 or now < wake
+                draft = bool(bs["enabled"] and bs["drafts"] and night)
+                if svc.broker.check(["mail.read"]).status == PermStatus.GRANTED:
+                    with brain_lock:
+                        stats = await asyncio.to_thread(tri.run, draft)
+                    if stats["drafted"] and hub.ws is not None:
+                        await hub.push({"type": "pending_changed"})
+            except Exception as ex:
+                log.warning("triage loop: %s", ex)
+            await asyncio.sleep(30 * 60)
+
+    async def update_loop():
+        """Prepare the newest app version in the background (every 6 hours)."""
+        await asyncio.sleep(20)
+        while updater:
+            try:
+                await asyncio.to_thread(updater.check)
+            except Exception as ex:
+                log.warning("update check failed: %s", ex)
+            await asyncio.sleep(6 * 3600)
+
     @app.on_event("startup")
     async def _start():
         app.state.proactive = asyncio.create_task(proactive_loop())
+        app.state.updates = asyncio.create_task(update_loop())
+        app.state.triage = asyncio.create_task(triage_loop())
         app.state.backups = asyncio.create_task(backup_loop())
 
     return app

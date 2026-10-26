@@ -1,7 +1,10 @@
 name: Android APK
 
-# Builds the JARVIS Android app in GitHub's cloud (free for public repos) and attaches the APK
-# to the run. Download it from the run's "Artifacts" section and install it on your phone.
+# Builds the JARVIS Android app in GitHub's cloud (free for public repos).
+# - Publishes an UNSIGNED release build as a GitHub Release (tag app-<version>) with apksigner.jar.
+#   Your JARVIS server downloads it, signs it with ITS OWN key and offers it to the phone as an
+#   in-app update. No signing key is ever stored in GitHub.
+# - Also keeps a debug APK as a run artifact (for testing only).
 on:
   workflow_dispatch: {}
   push:
@@ -9,7 +12,7 @@ on:
     paths: ["mobile/**", "jarvis/server/static/**", ".github/workflows/android.yml"]
 
 permissions:
-  contents: read
+  contents: write   # create the release
 
 jobs:
   apk:
@@ -37,12 +40,29 @@ jobs:
               https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/$f
           done
 
-      - name: Build debug APK
+      - name: Build release (unsigned) and debug APKs
         working-directory: mobile/android
         run: |
           set -o pipefail
           chmod +x gradlew
-          ./gradlew --no-daemon assembleDebug 2>&1 | tee -a ../../build.log
+          V=$((100 + ${{ github.run_number }}))
+          echo "JARVIS_VERSION=$V" >> "$GITHUB_ENV"
+          ./gradlew --no-daemon -PjarvisVersion=$V assembleRelease assembleDebug 2>&1 | tee -a ../../build.log
+
+      - name: Publish release for the server to sign
+        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -e
+          mkdir -p rel
+          cp mobile/android/app/build/outputs/apk/release/app-release-unsigned.apk rel/jarvis-unsigned.apk
+          SIGNER=$(ls "$ANDROID_HOME"/build-tools/*/lib/apksigner.jar | sort -V | tail -1)
+          cp "$SIGNER" rel/apksigner.jar
+          (cd rel && for f in jarvis-unsigned.apk apksigner.jar; do sha256sum "$f" | cut -d' ' -f1 > "$f.sha256"; done)
+          NOTES=$(git log -1 --pretty=%B | head -c 1500)
+          gh release create "app-$JARVIS_VERSION" rel/* --target "$GITHUB_SHA" \
+            --title "JARVIS app 2.$JARVIS_VERSION" --notes "$NOTES" --latest
 
       - name: Report errors as annotations (readable without log access)
         if: failure()

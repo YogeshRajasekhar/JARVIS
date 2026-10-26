@@ -170,3 +170,14 @@ button { cursor: pointer; }
 
 @media (prefers-reduced-motion: reduce) { #appr-yes.hold .fill { transition: none; } }
 .panel > p.sub, .prov-form p.sub { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+
+.dl { display: inline-block; text-align: center; text-decoration: none; color: var(--text); }
+.banner { align-self: stretch; border: 1px solid var(--amber); border-radius: 14px; padding: 10px 12px; display: flex;
+  gap: 10px; align-items: center; justify-content: space-between; }
+.banner button { flex: none; }
+.prov-form textarea { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--steel);
+  border: 1px solid var(--line); color: var(--text); resize: vertical; font: inherit; }
+.prov-form input[type=time] { width: 100%; padding: 10px 12px; border-radius: var(--radius-sm); background: var(--steel);
+  border: 1px solid var(--line); color: var(--text); }
+.prov-form input[type=checkbox], .prov-form input[type=radio] { width: auto; flex: none; padding: 0; }
+.prov-form .choice { text-align: left; }

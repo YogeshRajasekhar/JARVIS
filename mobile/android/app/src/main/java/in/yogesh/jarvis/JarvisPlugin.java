@@ -9,7 +9,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageInstaller;
 import android.content.pm.PackageManager;
+import android.content.pm.Signature;
 import android.content.pm.ResolveInfo;
 import android.database.Cursor;
 import android.hardware.camera2.CameraManager;
@@ -51,6 +54,16 @@ import com.getcapacitor.annotation.Permission;
 import com.getcapacitor.annotation.PermissionCallback;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
+import java.util.HashSet;
+import java.util.Set;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -100,10 +113,15 @@ public class JarvisPlugin extends Plugin {
             if (ttsReady) {
                 tts.setLanguage(new Locale("en", "IN"));
                 tts.setSpeechRate(1.02f);
+                applyVoice();
             }
         });
         Intent launch = getActivity().getIntent();
         if (launch != null && launch.getBooleanExtra("jarvis_wake", false)) notifyListeners("wake", new JSObject(), true);
+        if (launch != null && launch.getBooleanExtra("jarvis_brief", false)) {
+            launch.removeExtra("jarvis_brief");
+            notifyListeners("brief", new JSObject(), true);
+        }
     }
 
     @Override protected void handleOnResume() { appVisible = true; }
@@ -112,6 +130,73 @@ public class JarvisPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(Intent intent) {
         if (intent != null && intent.getBooleanExtra("jarvis_wake", false)) notifyListeners("wake", new JSObject(), true);
+        if (intent != null && intent.getBooleanExtra("jarvis_brief", false)) {
+            intent.removeExtra("jarvis_brief");
+            notifyListeners("brief", new JSObject(), true);
+        }
+    }
+
+    // ------------------------------------------------------------------ morning call
+    @PluginMethod
+    public void scheduleBrief(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        int h = call.getInt("hour", 6), m = call.getInt("minute", 0);
+        if (on && Build.VERSION.SDK_INT >= 33 && getPermissionState("notifications") != PermissionState.GRANTED) {
+            requestPermissionForAlias("notifications", call, "briefPermCallback");
+            return;
+        }
+        BriefReceiver.save(getContext(), on, h, m);
+        JSObject o = new JSObject();
+        o.put("ok", true);
+        call.resolve(o);
+    }
+
+    @PermissionCallback
+    private void briefPermCallback(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        BriefReceiver.save(getContext(), on, call.getInt("hour", 6), call.getInt("minute", 0));
+        JSObject o = new JSObject();
+        o.put("ok", true);
+        o.put("notifications", getPermissionState("notifications") == PermissionState.GRANTED);
+        call.resolve(o);
+    }
+
+    // ------------------------------------------------------------------ voice choice (free, on-device voices)
+    @PluginMethod
+    public void getVoices(PluginCall call) {
+        JSArray list = new JSArray();
+        if (ttsReady && tts.getVoices() != null) {
+            for (android.speech.tts.Voice v : tts.getVoices()) {
+                if (!"en".equals(v.getLocale().getLanguage())) continue;
+                JSObject o = new JSObject();
+                o.put("name", v.getName());
+                o.put("locale", v.getLocale().toLanguageTag());
+                o.put("network", v.isNetworkConnectionRequired());
+                o.put("quality", v.getQuality());
+                list.put(o);
+            }
+        }
+        JSObject out = new JSObject();
+        out.put("voices", list);
+        out.put("current", getContext().getSharedPreferences("jarvis", Context.MODE_PRIVATE).getString("voice", null));
+        call.resolve(out);
+    }
+
+    @PluginMethod
+    public void setVoice(PluginCall call) {
+        String name = call.getString("name");
+        getContext().getSharedPreferences("jarvis", Context.MODE_PRIVATE).edit().putString("voice", name).apply();
+        applyVoice();
+        call.resolve();
+    }
+
+    private void applyVoice() {
+        if (!ttsReady) return;
+        String name = getContext().getSharedPreferences("jarvis", Context.MODE_PRIVATE).getString("voice", null);
+        if (name == null || tts.getVoices() == null) return;
+        for (android.speech.tts.Voice v : tts.getVoices()) {
+            if (v.getName().equals(name)) { tts.setVoice(v); return; }
+        }
     }
 
     @Override
@@ -351,6 +436,159 @@ public class JarvisPlugin extends Plugin {
     private static void put(byte[] b, int off, String s) { for (int i = 0; i < 4; i++) b[off + i] = (byte) s.charAt(i); }
     private static void le16(byte[] b, int off, int v) { b[off] = (byte) v; b[off + 1] = (byte) (v >> 8); }
     private static void le32(byte[] b, int off, int v) { for (int i = 0; i < 4; i++) b[off + i] = (byte) (v >> (8 * i)); }
+
+    // ------------------------------------------------------------------ in-app updates
+    @PluginMethod
+    public void appVersion(PluginCall call) {
+        try {
+            PackageInfo pi = getContext().getPackageManager().getPackageInfo(getContext().getPackageName(), 0);
+            JSObject o = new JSObject();
+            o.put("code", Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode);
+            o.put("name", pi.versionName);
+            o.put("lastInstall", UpdateReceiver.lastResult);
+            call.resolve(o);
+        } catch (Exception e) {
+            call.reject(e.getMessage());
+        }
+    }
+
+    /**
+     * Downloads the update from YOUR server (paired devices only), checks the checksum, the package name,
+     * that it is newer, and that it is signed by the same key as the installed app; then asks Android to
+     * install it. Android shows one "Update" confirmation; nothing else is needed.
+     */
+    @PluginMethod
+    public void installUpdate(PluginCall call) {
+        Context c = getContext();
+        if (Build.VERSION.SDK_INT >= 26 && !c.getPackageManager().canRequestPackageInstalls()) {
+            Intent i = new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:" + c.getPackageName()));
+            startActivity(i);
+            JSObject o = new JSObject();
+            o.put("ok", false);
+            o.put("error", "allow_installs");
+            call.resolve(o);
+            return;
+        }
+        final String url = call.getString("url"), token = call.getString("token"), sha = call.getString("sha256", "");
+        if (url == null || !url.startsWith("https://") && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
+            call.reject("Updates must come from your server over https");
+            return;
+        }
+        new Thread(() -> {
+            try {
+                File apk = download(url, token, sha);
+                String problem = verify(apk);
+                if (problem != null) {
+                    JSObject o = new JSObject();
+                    o.put("ok", false);
+                    o.put("error", problem);
+                    call.resolve(o);
+                    return;
+                }
+                install(apk);
+                JSObject o = new JSObject();
+                o.put("ok", true);
+                call.resolve(o);
+            } catch (Exception e) {
+                call.reject("Update failed: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
+            }
+        }, "jarvis-update").start();
+    }
+
+    private File download(String url, String token, String sha) throws Exception {
+        HttpURLConnection con = (HttpURLConnection) new URL(url).openConnection();
+        con.setRequestProperty("Authorization", "Bearer " + token);
+        con.setConnectTimeout(20000);
+        con.setReadTimeout(120000);
+        if (con.getResponseCode() != 200) throw new Exception("server answered HTTP " + con.getResponseCode());
+        File out = new File(getContext().getCacheDir(), "jarvis-update.apk");
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        long total = 0, len = con.getContentLengthLong(), lastNotify = 0;
+        try (InputStream in = con.getInputStream(); OutputStream os = new FileOutputStream(out)) {
+            byte[] buf = new byte[1 << 16];
+            int n;
+            while ((n = in.read(buf)) > 0) {
+                os.write(buf, 0, n);
+                md.update(buf, 0, n);
+                total += n;
+                if (len > 0 && System.currentTimeMillis() - lastNotify > 300) {
+                    lastNotify = System.currentTimeMillis();
+                    JSObject p = new JSObject();
+                    p.put("progress", (double) total / len);
+                    notifyListeners("updateProgress", p);
+                }
+            }
+        } finally {
+            con.disconnect();
+        }
+        StringBuilder hex = new StringBuilder();
+        for (byte b : md.digest()) hex.append(String.format("%02x", b));
+        if (!sha.isEmpty() && !hex.toString().equalsIgnoreCase(sha)) {
+            out.delete();
+            throw new Exception("checksum mismatch; the download was damaged or tampered with");
+        }
+        return out;
+    }
+
+    @SuppressWarnings("deprecation")
+    private static Set<String> signers(PackageInfo pi) throws Exception {
+        Set<String> out = new HashSet<>();
+        Signature[] sigs = null;
+        if (Build.VERSION.SDK_INT >= 28 && pi.signingInfo != null) {
+            sigs = pi.signingInfo.hasMultipleSigners() ? pi.signingInfo.getApkContentsSigners()
+                    : pi.signingInfo.getSigningCertificateHistory();
+        } else if (pi.signatures != null) {
+            sigs = pi.signatures;
+        }
+        if (sigs == null) return out;
+        MessageDigest md = MessageDigest.getInstance("SHA-256");
+        for (Signature s : sigs) {
+            StringBuilder hex = new StringBuilder();
+            for (byte b : md.digest(s.toByteArray())) hex.append(String.format("%02x", b));
+            out.add(hex.toString());
+        }
+        return out;
+    }
+
+    /** Returns null if the APK is a valid update, otherwise a short reason code. */
+    @SuppressWarnings("deprecation")
+    private String verify(File apk) throws Exception {
+        PackageManager pm = getContext().getPackageManager();
+        int flags = Build.VERSION.SDK_INT >= 28 ? PackageManager.GET_SIGNING_CERTIFICATES : PackageManager.GET_SIGNATURES;
+        PackageInfo next = pm.getPackageArchiveInfo(apk.getAbsolutePath(), flags);
+        PackageInfo cur = pm.getPackageInfo(getContext().getPackageName(), flags);
+        if (next == null) return "invalid_apk";
+        if (!getContext().getPackageName().equals(next.packageName)) return "wrong_package";
+        long nextCode = Build.VERSION.SDK_INT >= 28 ? next.getLongVersionCode() : next.versionCode;
+        long curCode = Build.VERSION.SDK_INT >= 28 ? cur.getLongVersionCode() : cur.versionCode;
+        if (nextCode <= curCode) return "not_newer";
+        Set<String> a = signers(next), b = signers(cur);
+        if (!a.isEmpty() && !b.isEmpty()) {
+            a.retainAll(b);
+            if (a.isEmpty()) return "different_signer";
+        }
+        return null;
+    }
+
+    private void install(File apk) throws Exception {
+        Context c = getContext();
+        PackageInstaller pi = c.getPackageManager().getPackageInstaller();
+        PackageInstaller.SessionParams params = new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL);
+        params.setAppPackageName(c.getPackageName());
+        int id = pi.createSession(params);
+        try (PackageInstaller.Session session = pi.openSession(id)) {
+            try (OutputStream out = session.openWrite("jarvis.apk", 0, apk.length()); InputStream in = new FileInputStream(apk)) {
+                byte[] buf = new byte[1 << 16];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                session.fsync(out);
+            }
+            int mut = Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0;
+            PendingIntent pending = PendingIntent.getBroadcast(c, id, new Intent(c, UpdateReceiver.class),
+                    PendingIntent.FLAG_UPDATE_CURRENT | mut);
+            session.commit(pending.getIntentSender());
+        }
+    }
 
     // ------------------------------------------------------------------ text to speech (offline Android TTS)
     @PluginMethod

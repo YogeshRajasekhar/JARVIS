@@ -1,7 +1,10 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 TZ=Asia/Kolkata
-RUN apt-get update && apt-get install -y --no-install-recommends tzdata curl && rm -rf /var/lib/apt/lists/*
+# default-jre-headless: signs app updates on THIS server (the signing key never leaves /data).
+RUN apt-get update && apt-get install -y --no-install-recommends tzdata curl default-jre-headless \
+    && rm -rf /var/lib/apt/lists/*
+ENV JAVA_TOOL_OPTIONS="-Xmx384m -Djava.io.tmpdir=/tmp"
 
 WORKDIR /app
 COPY requirements-v2.txt .

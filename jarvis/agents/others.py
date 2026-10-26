@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import re
+import time
 from datetime import datetime, timedelta
 
 from src.agents.planner import PlanStep, StepStatus, Task, execute_next_step
 from jarvis.agents.base import AgentReply, BaseAgent, TurnContext
 from jarvis.core.permissions import PermStatus
+from jarvis.core.redaction import redact
 from jarvis.core.timeparse import fmt_time
 from jarvis.integrations.places import Place
 from jarvis.llm.schemas import GithubOut, PlacesOut
@@ -150,6 +153,11 @@ class PlacesAgent(BaseAgent):
 
 
 # ============================================================================ Briefing
+OVERNIGHT_RX = re.compile(r"\b(overnight|over night|while i (was )?(slept|asleep|sleeping|away)|morning report|night report|"
+                          r"since i (went to bed|slept|left)|what happened (last night|overnight))\b", re.I)
+MOOD_RX = re.compile(r"\b(anyone|anybody|someone|somebody|people|who)\b.{0,30}\b(mad|angry|upset|annoyed|pissed|unhappy|"
+                     r"frustrated|cross)\b", re.I)
+log = logging.getLogger("jarvis.briefing")
 class BriefingAgent(BaseAgent):
     """
     Proactive summary of the day. Only uses sources the user already granted, so a briefing
@@ -158,6 +166,105 @@ class BriefingAgent(BaseAgent):
     name = "briefing"
 
     def handle(self, text: str, ctx: TurnContext) -> AgentReply:
+        if MOOD_RX.search(text):
+            return self._mood(ctx)
+        if OVERNIGHT_RX.search(text):
+            return self._overnight(ctx)
+        return self._day(text, ctx)
+
+    # ------------------------------------------------------------------ "is anyone mad?"
+    def _mood(self, ctx: TurnContext) -> AgentReply:
+        from jarvis.agents.triage import InboxTriage
+        tri = InboxTriage(self.svc)
+        tri.run(draft=False)
+        upset = tri.upset_senders(time.time() - 48 * 3600)
+        if not upset:
+            return AgentReply(self.name, "No. Nobody is upset with you." if tri.results() else
+                              "I haven't seen any messages that sound upset, but I can only read email you've allowed.")
+        who = ", ".join(upset[:3]) + (f" and {len(upset) - 3} more" if len(upset) > 3 else "")
+        return AgentReply(self.name, f"{who} sounded upset in recent email. Want me to read it?",
+                          focus={"last_person": upset[0]})
+
+    # ------------------------------------------------------------------ overnight report (reel 1)
+    def _since(self, ctx: TurnContext) -> float:
+        rows = self.svc.db.query("SELECT ts FROM messages WHERE role='user' ORDER BY id DESC LIMIT 2")
+        now = ctx.now.timestamp()
+        last = rows[1]["ts"] if len(rows) > 1 else now - 12 * 3600
+        return max(last, now - 16 * 3600)            # at most "the last 16 hours"
+
+    def _overnight(self, ctx: TurnContext) -> AgentReply:
+        from jarvis.agents.triage import InboxTriage
+        now = ctx.now
+        since_ts = self._since(ctx)
+        since = datetime.fromtimestamp(since_ts, tz=now.tzinfo)
+        b = self.svc.broker
+        granted = lambda s: b.check([s]).status == PermStatus.GRANTED  # noqa: E731
+        clock = since.strftime("%I:%M %p").lstrip("0")
+        parts, action = [], False
+        if granted("mail.read"):
+            tri = InboxTriage(self.svc)
+            tri.run(draft=False)                     # classify anything new (drafting happens overnight)
+            rows = tri.since(since_ts)
+            real = [r for r in rows if r.get("category") != "suspicious"]
+            if real:
+                reply = [r for r in real if r.get("needs_reply")]
+                drafted = [p for p in self.svc.db.pending_requests()
+                           if p["payload"].get("tool") == "mail.send" and p["payload"]["args"].get("drafted_overnight")]
+                line = f"{len(real)} email{'s' if len(real) != 1 else ''} came in"
+                if reply:
+                    action = True
+                    line += f". {len(reply)} need{'s' if len(reply) == 1 else ''} a reply"
+                    if drafted:
+                        line += f"; {len(drafted)} {'is' if len(drafted) == 1 else 'are'} drafted and waiting for your approval"
+                parts.append(line + ".")
+                upset = list(dict.fromkeys(r["from"] for r in real if r.get("tone") == "upset"))
+                parts.append(f"{', '.join(upset)} sounded upset." if upset else "Nobody is upset with you.")
+                if upset:
+                    action = True
+            sus = [r for r in rows if r.get("category") == "suspicious"]
+            if sus:
+                parts.append(f"I ignored {len(sus)} phishing email{'s' if len(sus) != 1 else ''}.")
+        if granted("github.read"):
+            try:
+                commits = self.svc.github.commits_since(None, since)
+                if commits:
+                    c = commits[0]
+                    ci = self.svc.github.ci_status(None)
+                    word = {"success": "passing", "failure": "failing", "in_progress": "still running"}.get(ci.get("state"), ci.get("state"))
+                    parts.append(f"{len(commits)} commit{'s' if len(commits) != 1 else ''} pushed. The latest, "
+                                 f"\"{c['message']}\" by {c['author']} at {c['time'].astimezone(now.tzinfo).strftime('%I:%M %p').lstrip('0')}; CI is {word}.")
+                    if ci.get("state") == "failure":
+                        action = True
+            except Exception as ex:  # GitHub down must not break the report
+                log.info("github in report: %s", ex)
+        if granted("slack.read"):
+            try:
+                msgs = [m for m in self.svc.slack.read(None, 50) if m.ts.timestamp() >= since_ts]
+                qs = [m for m in msgs if "?" in m.text]
+                if qs:
+                    parts.append(f"{len(qs)} question{'s' if len(qs) != 1 else ''} on Slack, for example {qs[0].user}: \"{redact(qs[0].text[:80])}\".")
+                    action = True
+            except Exception as ex:
+                log.info("slack in report: %s", ex)
+        if granted("calendar.read"):
+            day_end = now.replace(hour=23, minute=59)
+            o = self.propose("calendar.list", {"start": now.isoformat(), "end": day_end.isoformat()}, ctx)
+            evs = o.data["events"] if o.ok else []
+            if evs:
+                parts.append(f"Today: {len(evs)} event{'s' if len(evs) != 1 else ''}, starting with {evs[0]['title']} at "
+                             f"{datetime.fromisoformat(evs[0]['start']).strftime('%I:%M %p').lstrip('0')}.")
+        pending = len(self.svc.db.pending_requests())
+        if not parts:
+            text = (f"Since we last spoke at {clock}, nothing came in that I can see. "
+                    "Allow email, Slack or GitHub access and I'll cover them too.")
+        else:
+            close = "That's everything." if action or pending else "That's everything. Nothing needed you."
+            text = f"Since we last spoke at {clock}: " + " ".join(parts) + " " + close
+        cards = [{"type": "approvals_hint", "count": pending}] if pending else []
+        return AgentReply(self.name, text, cards=cards)
+
+    # ------------------------------------------------------------------ regular day briefing
+    def _day(self, text: str, ctx: TurnContext) -> AgentReply:
         now, parts, outs, cards, missing = ctx.now, [], [], [], []
         b = self.svc.broker
 
@@ -268,9 +375,16 @@ class ChatAgent(BaseAgent):
         me = g.describe_node("self:me", max_edges=8)
         if me:
             lines.append(me)
+        about = self.svc.db.kv_get("about_me") or ""
+        if about:
+            lines.append(f"In their own words: {about[:1200]}")
         ctx = g.context_for(text)
         if ctx:
             lines.append(ctx)
+        past = [m for m in self.svc.db.search_messages(text, limit=6) if m["content"].strip() != text.strip()][:3]
+        if past:
+            lines.append("Earlier conversations (may be outdated): " +
+                         " | ".join(f"{m['role']}: {m['content'][:160]}" for m in past))
         return "\n".join(lines)
 
     def handle(self, text: str, ctx: TurnContext) -> AgentReply:

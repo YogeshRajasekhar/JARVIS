@@ -101,6 +101,9 @@ class GitHubProvider(ABC):
     @abstractmethod
     def create_issue(self, repo: str, title: str, body: str) -> dict: ...
 
+    def commits_since(self, repo: str, since) -> list[dict]:
+        return []
+
     @abstractmethod
     def comment(self, repo: str, number: int, body: str) -> dict: ...
 
@@ -117,6 +120,7 @@ class MockGitHub(GitHubProvider):
         self.notifs: list[dict] = [{"repo": f"{owner}/JARVIS", "title": "Add Slack integration", "type": "PullRequest", "reason": "review_requested"}]
         self.ci = {"state": "success", "workflow": "tests", "branch": "main"}
         self.created: list[dict] = []
+        self.commits: list[dict] = []   # [{"sha", "message", "author", "time": datetime}]
 
     def notifications(self):
         return list(self.notifs)
@@ -129,6 +133,9 @@ class MockGitHub(GitHubProvider):
 
     def ci_status(self, repo):
         return dict(self.ci, repo=self.full_name(repo))
+
+    def commits_since(self, repo, since):
+        return [c for c in self.commits if c["time"] > since]
 
     def repo_summary(self, repo):
         return {"repo": self.full_name(repo), "open_issues": len(self.list_issues(repo)),
@@ -182,6 +189,15 @@ class GitHubREST(GitHubProvider):
         r = runs[0]
         return {"repo": self.full_name(repo), "state": r.get("conclusion") or r.get("status"),
                 "workflow": r.get("name"), "branch": r.get("head_branch")}
+
+    def commits_since(self, repo, since):
+        out = []
+        for c in self._get(f"/repos/{self.full_name(repo)}/commits", since=since.isoformat(), per_page=20):
+            ts = c["commit"]["author"]["date"]
+            out.append({"sha": c["sha"][:7], "message": c["commit"]["message"].split("\n")[0][:120],
+                        "author": (c.get("author") or {}).get("login") or c["commit"]["author"]["name"],
+                        "time": datetime.fromisoformat(ts.replace("Z", "+00:00"))})
+        return out
 
     def repo_summary(self, repo):
         j = self._get(f"/repos/{self.full_name(repo)}")

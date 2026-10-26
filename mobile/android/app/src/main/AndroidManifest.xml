@@ -42,6 +42,15 @@
         </service>
 
         <receiver android:name=".ReminderReceiver" android:exported="false" />
+        <receiver android:name=".UpdateReceiver" android:exported="false" />
+        <receiver android:name=".BriefReceiver" android:exported="false" />
+        <!-- Exported only because Android requires it for boot broadcasts; it just re-arms the morning call. -->
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -70,6 +79,12 @@
     <uses-permission android:name="com.android.alarm.permission.SET_ALARM" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
     <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <!-- In-app updates: lets JARVIS hand its own update to Android's installer (you confirm each one). -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- Morning call: an alarm at the time you choose, restored after a reboot. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" android:maxSdkVersion="32" />
     <!-- Deliberately NOT requested: READ_SMS, SEND_SMS, CALL_PHONE, READ_CALL_LOG, storage, accessibility. -->
 
     <queries>

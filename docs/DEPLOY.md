@@ -86,3 +86,20 @@ opens the right screen the first time you ask.
 - Free model limits: roughly a thousand requests a day on Groq's larger model. The keyword fast
   path and caching keep everyday use far below that; when limits hit, JARVIS falls back automatically.
 - The pre-trained "hey jarvis" model is licensed for non-commercial use, which covers a personal assistant.
+
+
+## App updates (no more reinstalling)
+
+Every push builds a new app version. Your server picks it up within 6 hours (or immediately with
+Settings > App updates > Check for updates), signs it with a key that lives only on your server, and the app
+offers it: tap **Update**, then Android's **Update** confirmation. Your pairing and settings are kept.
+
+One-time switch-over from the old test builds (their signature is different, so Android can't update over them):
+1. Update the server (`git pull` and `docker compose up -d --build`), then wait a minute.
+2. Uninstall the old JARVIS app.
+3. In Chrome on the phone, open `https://jarvis.<tailnet>.ts.net`, pair, go to Settings > App updates >
+   **Download the Android app**, and install it.
+4. The first time you tap Update later, Android asks to allow JARVIS to install apps. Allow it once.
+
+Keep backups of the server's data volume: it holds the signing key. If it is lost, the app has to be
+reinstalled once more with a new key.

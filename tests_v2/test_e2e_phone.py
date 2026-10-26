@@ -279,4 +279,16 @@ def test_settings_add_model_provider(page, server, monkeypatch):
     assert "OpenAI" in first and "openai-smart-model" in first and GOOD_KEY not in pg.content()
     pg.screenshot(path=os.path.join(ART, "6_models.png"))
     assert svc.smart_llm.complete("hi") == "answer from openai-smart-model"
+    # New sections render and save without errors.
+    pg.check("#brief-on")
+    pg.fill("#brief-time", "05:45")
+    pg.click("#brief-save")
+    pg.wait_for_selector("#brief-msg:has-text('05:45')", timeout=5000)
+    pg.fill("#about", "Master's student. Keep emails short.")
+    pg.click("#about-save")
+    pg.wait_for_selector("#about-msg:has-text('Saved')", timeout=5000)
+    assert pg.locator("#voice option").count() >= 1
+    assert "Update" in pg.inner_text("#upd-info") or "update" in pg.inner_text("#upd-info") or "off" in pg.inner_text("#upd-info")
+    pg.screenshot(path=os.path.join(ART, "7_settings.png"), full_page=True)
+    assert pg.errors == [], pg.errors
     pg.click("#tabs button[data-view=main]")

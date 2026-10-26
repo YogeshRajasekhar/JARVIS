@@ -284,6 +284,26 @@ class RuleLLM:
             return {"subject": subject, "body": body}
         return {"subject": None, "body": sentence}
 
+    # ------------------------------------------------------------------ inbox triage (offline heuristics)
+    def _t_triage(self, prompt, system):
+        low = prompt.lower()
+        auto = re.search(r"no-?reply|notification|newsletter|unsubscribe|order #|receipt|has shipped|digest", low)
+        upset = re.search(r"unacceptable|disappoint|frustrat|annoy|angry|still (no|not|haven)|asked .{0,20}times|"
+                          r"not happy|ridiculous|complain|why haven", low)
+        urgent = re.search(r"urgent|asap|today|by tomorrow|deadline|immediately", low)
+        asks = "?" in prompt or re.search(r"\b(can you|could you|please (send|share|confirm|let me know)|let me know)\b", low)
+        subj = re.search(r"^Subject:\s*(.+)$", prompt, re.M)
+        return {"category": "notification" if auto else "work", "needs_reply": bool((asks or upset) and not auto),
+                "tone": "upset" if upset else "urgent" if urgent else "neutral",
+                "summary": (subj.group(1) if subj else "Email")[:80]}
+
+    def _t_draft_reply(self, prompt, system):
+        sender = re.search(r"^Sender:\s*(.+)$", prompt, re.M)
+        first = (sender.group(1).split()[0] if sender else "there").strip(",")
+        user = re.search(r"on behalf of (\w+)", system or "")
+        me = user.group(1) if user else "Yogesh"
+        return {"subject": None, "body": f"Hi {first},\n\nThanks for your email. I'll get back to you on this shortly.\n\nBest,\n{me}"}
+
     # ------------------------------------------------------------------ device
     def _t_device(self, prompt, system):
         t = _request(prompt)

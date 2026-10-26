@@ -110,7 +110,8 @@ class ActionExecutor:
 
     # ------------------------------------------------------------------ propose
     def propose(self, tool_name: str, args: dict, actor: str, untrusted: bool = False,
-                skip_permission: bool = False, resume: Optional[str] = None) -> Outcome:
+                skip_permission: bool = False, resume: Optional[str] = None,
+                ttl: Optional[float] = None) -> Outcome:
         """
         `resume`: the user utterance to re-run after a permission is granted. Used when a tool
         is called in the middle of an agent's flow (e.g. contact lookup while drafting an email):
@@ -173,7 +174,7 @@ class ActionExecutor:
                        "reason": reason,
                        "strong_auth": bool(tool.strong_auth(args) if callable(tool.strong_auth) else tool.strong_auth),
                        "editable": list(tool.editable),
-                       "untrusted": untrusted, "expires": time.time() + APPROVAL_TTL_SECONDS,
+                       "untrusted": untrusted, "expires": time.time() + (ttl or APPROVAL_TTL_SECONDS),
                        "severity": tool.severity.name}
             payload["summary"] = tool.summary(args) if tool.summary else payload["preview"].split("\n")[0]
             rid = self.db.add_request("approval", payload)

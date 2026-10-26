@@ -136,6 +136,8 @@ $("dial-end").onclick = () => $("dialer").classList.add("hidden");
 let voice = null;
 function pickVoice() {
   const vs = window.speechSynthesis?.getVoices?.() || [];
+  const chosen = store.get("jarvis_voice");
+  if (chosen && vs.find((v) => v.name === chosen)) { voice = vs.find((v) => v.name === chosen); return; }
   voice = vs.find((v) => /en-GB/i.test(v.lang) && /male|daniel|george|arthur/i.test(v.name)) || vs.find((v) => /en-GB/i.test(v.lang)) || vs.find((v) => /^en/i.test(v.lang)) || null;
 }
 if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
@@ -382,6 +384,7 @@ function connect() {
       if (sock.readyState === WebSocket.OPEN) sock.send(JSON.stringify({ type: "device_result", id: m.id, result }));
     }
     else if (m.type === "wake") onWake();
+    else if (m.type === "pending_changed") api("/api/pending").then((r) => r && showRequests(r.pending)).catch(() => {});
     else if (m.type === "notify") { toast(m.text); if (m.speak) speak(m.text); }
   };
   sock.onclose = (e) => {
@@ -675,6 +678,130 @@ async function chooseModels(p, li) {
   box.append(save);
 }
 
+// ------------------------------------------------------------------ in-app updates
+let myVersion = null, updateInfo = null, updateOffered = false;
+async function refreshUpdate(force = false) {
+  if (Native?.appVersion) myVersion = await Native.appVersion().catch(() => null);
+  const r = force ? await apiDetail("/api/app/check", { method: "POST" }) : await apiDetail("/api/app/update");
+  updateInfo = r.ok ? r.data : null;
+  renderUpdate(r.ok ? null : r.error);
+  return updateInfo;
+}
+function updateIsNewer() {
+  const a = updateInfo?.available;
+  return !!(a && myVersion && a.code > myVersion.code);
+}
+function renderUpdate(err) {
+  const info = $("upd-info"); if (!info) return;
+  const a = updateInfo?.available;
+  const mine = myVersion ? `This app: 2.${myVersion.code}.` : "";
+  if (updateInfo?.disabled) info.textContent = "Updates are turned off on the server.";
+  else if (updateIsNewer()) info.textContent = `${mine} Update 2.${a.code} is ready (${Math.round(a.size / 1e6)} MB).`;
+  else if (a) info.textContent = `${mine} You're up to date.`;
+  else info.textContent = `${mine} No update prepared yet.`;
+  $("upd-install").classList.toggle("hidden", !updateIsNewer());
+  $("upd-download").classList.toggle("hidden", IN_APP || !a);
+  const e = err || updateInfo?.last_error;
+  $("upd-msg").textContent = e ? `Server: ${e}` : "";
+}
+async function installUpdate() {
+  const a = updateInfo?.available; if (!a) return;
+  $("upd-msg").textContent = "Downloading from your server...";
+  let r;
+  try { r = await Native.installUpdate({ url: SERVER + "/api/app/apk", token, sha256: a.sha256, code: a.code }); }
+  catch (e) { $("upd-msg").textContent = String(e?.message || e); return; }
+  const why = {
+    allow_installs: "Allow JARVIS to install updates in the screen that just opened (one time), then tap Install update again.",
+    different_signer: "This app was installed from an older test build, so Android won't accept the update over it. One last time: uninstall JARVIS, then open your server address in Chrome, Settings > Download the Android app, and install it. From then on, updates are one tap here.",
+    not_newer: "You already have this version.", invalid_apk: "The download isn't a valid app.", wrong_package: "That file isn't JARVIS.",
+  };
+  $("upd-msg").textContent = r?.ok ? "Android will now ask you to confirm the update. Tap Update." : (why[r?.error] || `Update failed: ${r?.error}`);
+}
+$("upd-install").onclick = installUpdate;
+$("upd-check").onclick = async () => { $("upd-msg").textContent = "Checking GitHub and preparing the update on your server..."; await refreshUpdate(true); };
+$("upd-download").onclick = async (e) => {             // browser only: one-time install of the server-signed app
+  e.preventDefault();
+  $("upd-msg").textContent = "Downloading...";
+  const r = await fetch(SERVER + "/api/app/apk", { headers: { Authorization: `Bearer ${token}` } });
+  if (!r.ok) { $("upd-msg").textContent = "No app prepared yet. Tap Check for updates."; return; }
+  const url = URL.createObjectURL(await r.blob());
+  const a = document.createElement("a"); a.href = url; a.download = "jarvis.apk"; document.body.append(a); a.click(); a.remove();
+  $("upd-msg").textContent = "Downloaded. Open jarvis.apk from your downloads to install.";
+};
+if (Native?.addListener) Native.addListener("updateProgress", (e) => { $("upd-msg").textContent = `Downloading ${Math.round((e.progress || 0) * 100)}%`; });
+function offerUpdateBanner() {
+  if (updateOffered || !IN_APP || !updateIsNewer()) return;
+  updateOffered = true;
+  const li = el("li", "banner");
+  li.append(el("span", "", `JARVIS 2.${updateInfo.available.code} is ready.`));
+  const b = el("button", "primary", "Update");
+  b.onclick = () => { document.querySelector('#tabs button[data-view=security]').click(); installUpdate(); };
+  li.append(b);
+  $("log").append(li);
+}
+
+// ------------------------------------------------------------------ morning call, about you, voice
+function briefMsg(t, ok) { const m = $("brief-msg"); m.textContent = t; m.classList.toggle("ok", !!ok); }
+async function syncBrief(b) {
+  // The alarm lives on the phone (works even when the app is closed); the server only needs the time
+  // to know when "overnight" is, for reply drafts.
+  if (!Native?.scheduleBrief || !b) return;
+  const [hour, minute] = b.time.split(":").map(Number);
+  await Native.scheduleBrief({ enabled: !!b.enabled, hour, minute }).catch(() => {});
+}
+async function loadPersonal() {
+  const b = await apiDetail("/api/brief");
+  if (b.ok) { $("brief-on").checked = b.data.enabled; $("brief-time").value = b.data.time; $("brief-drafts").checked = b.data.drafts; }
+  const p = await apiDetail("/api/profile");
+  if (p.ok) $("about").value = p.data.about;
+  loadVoices();
+}
+$("brief-save").onclick = async () => {
+  const body = { enabled: $("brief-on").checked, time: $("brief-time").value || "06:00", drafts: $("brief-drafts").checked };
+  const r = await apiDetail("/api/brief", { method: "POST", body });
+  if (!r.ok) { briefMsg(r.error); return; }
+  await syncBrief(r.data);
+  briefMsg(r.data.enabled ? `I'll call you at ${r.data.time} every day.` : "Morning call is off.", true);
+};
+$("about-save").onclick = async () => {
+  const r = await apiDetail("/api/profile", { method: "POST", body: { about: $("about").value } });
+  const m = $("about-msg");
+  m.textContent = r.ok ? (r.data.about !== $("about").value.trim() ? "Saved. I removed codes or numbers that shouldn't be stored." : "Saved.") : r.error;
+  m.classList.toggle("ok", r.ok);
+  if (r.ok) $("about").value = r.data.about;
+};
+async function loadVoices() {
+  const sel = $("voice"); sel.replaceChildren();
+  let list = [], current = null;
+  if (Native?.getVoices) {
+    const r = await Native.getVoices().catch(() => null);
+    list = (r?.voices || []).map((v) => ({ name: v.name, label: `${v.locale}${v.network ? " (online)" : ""}: ${v.name}` }));
+    current = r?.current;
+  } else if (window.speechSynthesis) {
+    list = window.speechSynthesis.getVoices().filter((v) => /^en/i.test(v.lang)).map((v) => ({ name: v.name, label: `${v.lang}: ${v.name}` }));
+    current = store.get("jarvis_voice");
+  }
+  sel.append(new Option("Default voice", ""));
+  // British voices first: the movie JARVIS is British.
+  list.sort((a, b) => (/en-GB/i.test(b.label) - /en-GB/i.test(a.label)) || a.label.localeCompare(b.label));
+  for (const v of list) sel.append(new Option(v.label, v.name));
+  sel.value = current && list.some((v) => v.name === current) ? current : "";
+}
+$("voice").onchange = async () => {
+  const name = $("voice").value;
+  if (Native?.setVoice) await Native.setVoice({ name: name || null }).catch(() => {});
+  else { store.set("jarvis_voice", name); pickVoice(); }
+};
+$("voice-test").onclick = () => { muted = false; speak(`Good morning, ${myName || "sir"}. Nothing needed you overnight.`); };
+let myName = null;
+// The morning call fired and you tapped "Brief me" (or opened the app from it).
+async function onBriefCall() {
+  document.querySelector('#tabs button[data-view=main]')?.click();
+  for (let i = 0; i < 40 && !wsOpen(); i++) await new Promise((r) => setTimeout(r, 250));   // connection settles
+  send("overnight report", "brief");
+}
+if (Native?.addListener) Native.addListener("brief", () => onBriefCall());
+
 function renderVoiceChoice() {
   document.querySelectorAll("input[name=stt]").forEach((r) => {
     r.checked = r.value === sttMode;
@@ -685,6 +812,8 @@ function renderVoiceChoice() {
 async function loadSecurity() {
   renderVoiceChoice();
   loadModels();
+  refreshUpdate();
+  loadPersonal();
   const p = await api("/api/permissions"); const a = await api("/api/audit");
   if (!p) return;
   $("unlock").classList.toggle("hidden", !p.locked);
@@ -732,7 +861,9 @@ function start() {
   $("pair").classList.add("hidden"); $("main").classList.remove("hidden"); $("tabs").classList.remove("hidden");
   setState("offline"); renderStatus(); renderClock();
   note("Say Hey JARVIS, tap the mic, or type.");
-  api("/api/status").then((st) => { serverStt = !!st?.server_stt; }).catch(() => {});
+  api("/api/status").then((st) => { serverStt = !!st?.server_stt; myName = st?.user || null; }).catch(() => {});
+  apiDetail("/api/brief").then((r) => r.ok && syncBrief(r.data)).catch(() => {});   // keep the phone alarm in sync
+  setTimeout(() => refreshUpdate().then(offerUpdateBanner).catch(() => {}), 3000);
   connect();
 }
 if (!IN_APP) $("server-field").classList.add("hidden");

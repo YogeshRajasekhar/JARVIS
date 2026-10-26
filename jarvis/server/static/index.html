@@ -81,6 +81,30 @@
           <span>Phone recognizer<span class="sub">Faster, can work offline, weaker with accents.</span></span></label>
         <p id="stt-note" class="sub"></p>
       </div>
+      <h3>Morning call</h3>
+      <div class="prov-form">
+        <label class="choice"><input type="checkbox" id="brief-on">
+          <span>Call me with the overnight report<span class="sub">An alarm-style notification with "Brief me" or "5 more minutes".</span></span></label>
+        <label for="brief-time">Time</label>
+        <input id="brief-time" type="time" value="06:00">
+        <label class="choice"><input type="checkbox" id="brief-drafts" checked>
+          <span>Draft replies overnight<span class="sub">Emails that need an answer get a draft waiting for your approval. Nothing is sent.</span></span></label>
+        <button id="brief-save" type="button" class="primary">Save</button>
+        <p id="brief-msg" class="sub" role="status"></p>
+      </div>
+      <h3>About you</h3>
+      <div class="prov-form">
+        <label for="about">Your work, goals, the people you work with, and how you like things done. JARVIS uses this for tone and context.</label>
+        <textarea id="about" maxlength="2000" rows="6" placeholder="I'm a master's student at IIT Madras working on cloth manipulation. Keep emails short. I prefer meetings after 10am."></textarea>
+        <button id="about-save" type="button" class="primary">Save</button>
+        <p id="about-msg" class="sub" role="status"></p>
+      </div>
+      <h3>JARVIS voice</h3>
+      <div class="prov-form">
+        <label for="voice">Voice</label>
+        <select id="voice"></select>
+        <button id="voice-test" type="button" class="ghost">Play a sample</button>
+      </div>
       <h3>Language models</h3>
       <p class="sub">JARVIS tries these in order and falls back to the next one if a model fails or hits its limit.</p>
       <ul id="providers" class="rows"></ul>
@@ -100,6 +124,14 @@
         <p id="prov-msg" class="sub" role="status"></p>
         <p class="sub">The key is sent once over your private connection, checked with a real request, and stored encrypted on your server. It never comes back to the phone.</p>
       </form>
+      <h3>App updates</h3>
+      <div class="prov-form">
+        <p id="upd-info" class="sub">Checking...</p>
+        <button id="upd-install" type="button" class="primary hidden">Install update</button>
+        <button id="upd-check" type="button" class="ghost">Check for updates</button>
+        <a id="upd-download" class="ghost dl hidden" href="#">Download the Android app</a>
+        <p id="upd-msg" class="sub" role="status"></p>
+      </div>
       <h3>Security</h3>
       <div class="lock">
         <button id="lockdown" class="danger">Lock down JARVIS</button>

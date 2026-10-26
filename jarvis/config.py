@@ -68,6 +68,9 @@ class Settings:
     github_token: str = field(default_factory=lambda: _env("GITHUB_TOKEN"))
     github_user: str = field(default_factory=lambda: _env("GITHUB_USER", "YogeshRajasekhar"))
 
+    # ---- In-app updates: where the app's GitHub releases come from ("" disables updates) ----
+    update_repo: str = field(default_factory=lambda: _env("JARVIS_UPDATE_REPO", "YogeshRajasekhar/JARVIS"))
+
     # Mock integrations are seeded with demo data so the virtual phone has something to show.
     seed_demo_data: bool = field(default_factory=lambda: _env("JARVIS_SEED_DEMO", "1") == "1")
 

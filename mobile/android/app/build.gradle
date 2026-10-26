@@ -7,8 +7,9 @@ android {
         applicationId "in.yogesh.jarvis"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 2
-        versionName "2.0"
+        // CI passes -PjarvisVersion=<run number>; local builds stay at 2.
+        versionCode((project.findProperty("jarvisVersion") ?: "2").toString().toInteger())
+        versionName "2." + (project.findProperty("jarvisVersion") ?: "0")
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

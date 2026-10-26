@@ -9,6 +9,7 @@ SMS (approval card first), contacts lookup, location, filtered notifications, qu
 
 from __future__ import annotations
 
+import re
 from datetime import timedelta
 
 from jarvis.agents.base import AgentReply, BaseAgent, TurnContext
@@ -17,10 +18,18 @@ from jarvis.llm.schemas import DeviceOut
 from jarvis.prompts import DEVICE
 
 
+# "call me at 6", "ring me in 20 minutes about the laundry": JARVIS phones YOU (a ringing call, not the dialer).
+CALL_ME_RX = re.compile(r"^(?:please\s+)?(?:call|ring|phone)\s+me\b(?P<rest>.*)$", re.I)
+ABOUT_RX = re.compile(r"\b(?P<conn>about|to|for|regarding|and (?:remind|tell) me (?:to|about))\s+(?P<what>.+)$", re.I)
+
+
 class DeviceAgent(BaseAgent):
     name = "device"
 
     def handle(self, text: str, ctx: TurnContext) -> AgentReply:
+        m = CALL_ME_RX.match(text.strip().rstrip(".!?"))
+        if m:
+            return self._call_me(m.group("rest").strip(), ctx)
         cmd: DeviceOut = self.extract(DeviceOut, DEVICE, text, ctx, task="device")
         return getattr(self, f"_do_{cmd.action}")(cmd, ctx)
 
@@ -53,6 +62,25 @@ class DeviceAgent(BaseAgent):
         label = (cmd.label or "Reminder").rstrip(".")
         return self._single("device.set_reminder", {"at_iso": at.isoformat(), "label": label}, ctx,
                             f"I'll remind you to {label[0].lower() + label[1:]} {fmt_time(at, ctx.now)}.")
+
+    def _call_me(self, rest: str, ctx: TurnContext) -> AgentReply:
+        what, conn = None, "about"
+        a = ABOUT_RX.search(rest)
+        if a:
+            what, rest = a.group("what").strip(), rest[:a.start()].strip()
+            conn = "to" if a.group("conn").lower().endswith("to") else "about"
+        if not rest:
+            return AgentReply(self.name, "When should I call you?", clarify="time")
+        r = resolve(rest, ctx.now)
+        if not r or not r.has_time and not re.search(r"\bin\s+\d", rest):
+            return AgentReply(self.name, "What time should I call you?", clarify="time")
+        at = r.start
+        if at <= ctx.now:
+            at = at + timedelta(days=1)
+        label = (what or "Your call from JARVIS").rstrip(".")
+        about = f" {conn} {what}" if what else ""
+        return self._single("device.set_reminder", {"at_iso": at.isoformat(), "label": label, "call": True}, ctx,
+                            f"I'll call you {fmt_time(at, ctx.now)}{about}.")
 
     def _do_open_app(self, cmd, ctx):
         if not cmd.app:

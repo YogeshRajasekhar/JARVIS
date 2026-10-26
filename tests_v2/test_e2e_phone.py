@@ -199,8 +199,60 @@ def test_whisper_voice_input_records_until_silence(page, server):
         except Exception:
             raise AssertionError("no reply; last notes: " + " | ".join(pg.locator("#log li.note").all_inner_texts()[-3:]))
         assert calls and calls[0] > 1000          # real recorded audio reached the server
-        assert pg.locator("#log li.you").last.inner_text() == "what's my battery"
+        assert pg.locator("#log li.you").first.inner_text() == "what's my battery" or \
+            "what's my battery" in pg.locator("#log li.you").all_inner_texts()
+        # Conversation mode: after the answer the mic opens again by itself (no wake word, no tap).
+        pg.wait_for_function("1", timeout=1000)
+        deadline = time.time() + 20
+        while len(calls) < 2 and time.time() < deadline:
+            pg.wait_for_timeout(250)
+        assert len(calls) >= 2, "the mic did not reopen after the reply"
     finally:
+        page.evaluate("document.getElementById('convo-toggle').getAttribute('aria-pressed') === 'true' && document.getElementById('convo-toggle').click()")
+        page.wait_for_timeout(2500)              # let the in-flight turn finish
+        speech.build_stt = speech_build
+
+
+def test_call_jarvis_hands_free(page, server):
+    """Call JARVIS: greeting, a spoken question, a spoken answer, the line stays open, 'thanks' hangs up."""
+    import jarvis.voice.speech as speech
+    script = iter(["what's my battery", "thanks jarvis"])
+    heard = []
+
+    class FakeWhisper:
+        def transcribe(self, audio, filename, prompt=None):
+            t = next(script, "")
+            heard.append(t)
+            return t
+
+    speech_build = speech.build_stt
+    speech.build_stt = lambda *a, **k: FakeWhisper()
+    try:
+        pg = page
+        pg.reload()
+        pg.wait_for_selector("#state:has-text('Ready')", timeout=10000)
+        pg.evaluate("window.__jarvis.speakOff()")
+        pg.evaluate("window.__jarvis.setStt('whisper', true)")
+        pg.click("#call-btn")
+        pg.wait_for_selector("#call:not(.hidden)", timeout=3000)
+        assert "JARVIS here" in pg.inner_text("#cap-jarvis")
+        pg.wait_for_function("document.getElementById('cap-you').textContent.includes('battery')", timeout=20000)
+        pg.wait_for_function("document.getElementById('cap-jarvis').textContent.length > 5 && "
+                             "!document.getElementById('cap-jarvis').textContent.includes('JARVIS here')", timeout=10000)
+        pg.screenshot(path=os.path.join(ART, "8_call.png"))
+        pg.wait_for_selector("#call", state="hidden", timeout=25000)      # "thanks jarvis" ends the call
+        assert heard[:2] == ["what's my battery", "thanks jarvis"]
+        assert any("Call ended" in n for n in pg.locator("#log li.note").all_inner_texts())
+        # JARVIS calling you: the ringing screen, answer -> on the line with the reason.
+        pg.evaluate("window.__jarvis.showRing('Review the slides')")
+        pg.wait_for_selector("#ring:not(.hidden)", timeout=2000)
+        pg.wait_for_timeout(600)
+        pg.screenshot(path=os.path.join(ART, "9_ring.png"))
+        pg.click("#ring-no")
+        assert pg.is_hidden("#ring")
+        assert pg.errors == [], pg.errors
+    finally:
+        page.evaluate("window.__jarvis.endCall()")
         speech.build_stt = speech_build
 
 

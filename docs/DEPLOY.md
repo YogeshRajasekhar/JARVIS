@@ -108,3 +108,16 @@ One-time switch-over from the old test builds (their signature is different, so 
 
 Keep backups of the server's data volume: it holds the signing key. If it is lost, the app has to be
 reinstalled once more with a new key.
+
+
+## Keep the server updated by itself
+
+The app and the server update separately. Run this once on the VM and the server pulls new versions every
+6 hours by itself (only rebuilding when something changed):
+
+```bash
+cd ~/JARVIS && git pull && sudo deploy/autoupdate.sh install
+```
+
+`sudo deploy/autoupdate.sh run` updates right away; `sudo deploy/autoupdate.sh remove` turns it off.
+If the app ever says "Your JARVIS server is older than this app", this is the fix.

@@ -238,3 +238,9 @@ def test_fallback_replace_clears_state():
     assert f.last_errors
     f.replace([Ok()])
     assert f.last_errors == {} and f.complete("x") == "fine"
+
+
+def test_thinking_tags_are_removed():
+    from jarvis.llm.providers import strip_thinking
+    assert strip_thinking("<think>\nlet me see</think>\n{\"a\": 1}") == '{"a": 1}'
+    assert strip_thinking("plain answer") == "plain answer"

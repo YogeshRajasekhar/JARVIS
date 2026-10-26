@@ -288,7 +288,8 @@ def test_pick_model_prefers_tier_and_skips_non_chat():
     groq = ["whisper-large-v3", "openai/gpt-oss-120b", "openai/gpt-oss-20b", "meta-llama/llama-guard-4-12b", "qwen/qwen3.8-27b"]
     from jarvis.llm.providers import PREFS
     assert pick_model(groq, PREFS["groq"]["smart"]) == "openai/gpt-oss-120b"
-    assert pick_model(groq, PREFS["groq"]["fast"]) == "openai/gpt-oss-20b"
+    assert pick_model(groq, PREFS["groq"]["fast"]) == "qwen/qwen3.8-27b"           # open-weight Qwen for quick tasks
+    assert pick_model(groq[:3], PREFS["groq"]["fast"]) == "openai/gpt-oss-20b"
     gem = ["gemini-2.5-flash", "gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.8-flash-preview-0901",
            "gemini-3.5-flash-lite", "gemini-3.8-flash-image", "text-embedding-005", "gemma-4-27b-it"]
     assert pick_model(gem, PREFS["gemini"]["smart"]) == "gemini-3.8-flash"        # newest stable, not image/preview

@@ -13,6 +13,7 @@ import urllib.request
 WAKE = "https://github.com/dscripka/openWakeWord/releases/download/v0.5.1/"
 VOICE = "https://github.com/rhasspy/piper/releases/download/v0.0.2/voice-en-us-lessac-low.tar.gz"
 # British male voice for the JARVIS server voice (MIT-licensed Piper voice, about 63 MB).
+KOKORO = "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/"
 GB = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_GB/alan/medium/"
 
 
@@ -43,6 +44,11 @@ def main() -> None:
             try:
                 fetch(GB + f, os.path.join(a.dir, f))
             except Exception as e:            # optional: the app falls back to the phone's voice
+                print("skip", f, e)
+        for f in ("kokoro-v1.0.fp16.onnx", "voices-v1.0.bin"):      # HD voice, about 205 MB
+            try:
+                fetch(KOKORO + f, os.path.join(a.dir, f))
+            except Exception as e:
                 print("skip", f, e)
     print("done")
 

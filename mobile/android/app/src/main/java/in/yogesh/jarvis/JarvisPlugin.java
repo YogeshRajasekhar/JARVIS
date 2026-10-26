@@ -118,6 +118,12 @@ public class JarvisPlugin extends Plugin {
         });
         Intent launch = getActivity().getIntent();
         if (launch != null && launch.getBooleanExtra("jarvis_wake", false)) notifyListeners("wake", new JSObject(), true);
+        if (launch != null && launch.getStringExtra("jarvis_call") != null) {
+            JSObject o = new JSObject(); o.put("reason", launch.getStringExtra("jarvis_call"));
+            launch.removeExtra("jarvis_call");
+            getContext().getSystemService(NotificationManager.class).cancel(ReminderReceiver.CALL_NOTE);
+            notifyListeners("call", o, true);
+        }
         if (launch != null && launch.getBooleanExtra("jarvis_brief", false)) {
             launch.removeExtra("jarvis_brief");
             notifyListeners("brief", new JSObject(), true);
@@ -130,6 +136,12 @@ public class JarvisPlugin extends Plugin {
     @Override
     protected void handleOnNewIntent(Intent intent) {
         if (intent != null && intent.getBooleanExtra("jarvis_wake", false)) notifyListeners("wake", new JSObject(), true);
+        if (intent != null && intent.getStringExtra("jarvis_call") != null) {
+            JSObject o = new JSObject(); o.put("reason", intent.getStringExtra("jarvis_call"));
+            intent.removeExtra("jarvis_call");
+            getContext().getSystemService(NotificationManager.class).cancel(ReminderReceiver.CALL_NOTE);
+            notifyListeners("call", o, true);
+        }
         if (intent != null && intent.getBooleanExtra("jarvis_brief", false)) {
             intent.removeExtra("jarvis_brief");
             notifyListeners("brief", new JSObject(), true);
@@ -137,6 +149,24 @@ public class JarvisPlugin extends Plugin {
     }
 
     // ------------------------------------------------------------------ morning call
+    /** Keeps the screen on during a JARVIS call. */
+    @PluginMethod
+    public void keepAwake(PluginCall call) {
+        boolean on = Boolean.TRUE.equals(call.getBoolean("on", false));
+        getActivity().runOnUiThread(() -> {
+            if (on) getActivity().getWindow().addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            else getActivity().getWindow().clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            call.resolve();
+        });
+    }
+
+    /** Stops whatever the phone voice is saying (tap to interrupt). */
+    @PluginMethod
+    public void stopSpeaking(PluginCall call) {
+        if (ttsReady) tts.stop();
+        call.resolve();
+    }
+
     /** Opens an https link in the real browser (Google refuses sign-in inside app web views). */
     @PluginMethod
     public void openUrl(PluginCall call) {
@@ -361,10 +391,13 @@ public class JarvisPlugin extends Plugin {
         boolean wakeOn = WakeWordService.isActive();
         wakeService(WakeWordService.ACTION_PAUSE);
         final int maxMs = Math.max(2000, Math.min(30000, call.getInt("maxMs", 15000)));
+        // waitMs: how long to wait for you to START talking; silenceMs: the pause that means you're done.
+        final int waitMs = Math.max(1500, Math.min(20000, call.getInt("waitMs", 7000)));
+        final int silenceMs = Math.max(600, Math.min(3000, call.getInt("silenceMs", 1300)));
         new Thread(() -> {
             try {
                 if (wakeOn) SystemClock.sleep(200);      // let the wake-word listener release the mic
-                call.resolve(recordUntilSilence(maxMs));
+                call.resolve(recordUntilSilence(maxMs, waitMs, silenceMs));
             } catch (Exception e) {
                 call.reject("Couldn't record: " + (e.getMessage() == null ? e.toString() : e.getMessage()));
             } finally {
@@ -386,7 +419,7 @@ public class JarvisPlugin extends Plugin {
         call.resolve();
     }
 
-    private JSObject recordUntilSilence(int maxMs) throws Exception {
+    private JSObject recordUntilSilence(int maxMs, int waitMs, int silenceMs) throws Exception {
         final int rate = 16000;
         int min = AudioRecord.getMinBufferSize(rate, AudioFormat.CHANNEL_IN_MONO, AudioFormat.ENCODING_PCM_16BIT);
         AudioRecord rec;
@@ -427,7 +460,7 @@ public class JarvisPlugin extends Plugin {
                     lv.put("level", Math.min(1.0, rms / 3000.0));
                     notifyListeners("level", lv);
                 }
-                if ((heard && now - lastLoud > 1300) || now - start > maxMs || (!heard && now - start > 7000)) break;
+                if ((heard && now - lastLoud > silenceMs) || now - start > maxMs || (!heard && now - start > waitMs)) break;
             }
         } finally {
             try { rec.stop(); } catch (Exception ignored) { }
@@ -743,7 +776,8 @@ public class JarvisPlugin extends Plugin {
             }
             case "set_reminder": {
                 long at = OffsetDateTime.parse(a.getString("at_iso")).toInstant().toEpochMilli();
-                Intent i = new Intent(c, ReminderReceiver.class).putExtra("label", a.optString("label", "Reminder"));
+                Intent i = new Intent(c, ReminderReceiver.class).putExtra("label", a.optString("label", "Reminder"))
+                        .putExtra("call", a.optBoolean("call", false));
                 PendingIntent pi = PendingIntent.getBroadcast(c, (int) (at / 1000 % Integer.MAX_VALUE), i,
                         PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
                 AlarmManager am = c.getSystemService(AlarmManager.class);

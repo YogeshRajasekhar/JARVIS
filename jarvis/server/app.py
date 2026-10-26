@@ -44,6 +44,7 @@ from jarvis.services import build_services
 log = logging.getLogger("jarvis.server")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
+API_LEVEL = 4   # 4: accounts, server voices, call mode
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ws: wss:; "
        "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
@@ -245,7 +246,8 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
 
     @app.get("/api/health")
     async def health():
-        return {"ok": True}
+        # api: bumped whenever the app needs new server endpoints, so the app can say "update your server".
+        return {"ok": True, "api": API_LEVEL}
 
     # ------------------------------------------------------------------ REST (same API as the WebSocket)
     @app.post("/api/message", dependencies=[Depends(auth)])
@@ -468,10 +470,6 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
                             filename=f"jarvis-{info['code']}.apk", headers={"X-Sha256": info["sha256"]})
 
     def _has_voice() -> bool:
-        try:
-            import piper  # noqa: F401
-        except ImportError:
-            return False
         from jarvis.voice.speech import available_voices
         return bool(available_voices(model_dir))
 

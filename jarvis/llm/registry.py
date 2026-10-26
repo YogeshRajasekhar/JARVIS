@@ -31,7 +31,7 @@ CATALOG: dict[str, dict] = {
                "help": "https://platform.openai.com/api-keys", "stt": "whisper-1"},
     "anthropic": {"label": "Anthropic (Claude)", "kind": "anthropic", "help": "https://console.anthropic.com/settings/keys"},
     "groq": {"label": "Groq", "kind": "openai", "base": "https://api.groq.com/openai/v1",
-             "help": "https://console.groq.com/keys", "stt": "whisper-large-v3-turbo"},
+             "help": "https://console.groq.com/keys", "stt": "whisper-large-v3"},
     "gemini": {"label": "Google Gemini", "kind": "gemini", "help": "https://aistudio.google.com/app/apikey"},
     "openrouter": {"label": "OpenRouter", "kind": "openai", "base": "https://openrouter.ai/api/v1",
                    "help": "https://openrouter.ai/keys"},

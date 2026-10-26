@@ -3,10 +3,10 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0b1322">
+<meta name="theme-color" content="#060403">
 <title>JARVIS</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wdth,wght@75..125,300..700&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira:wdth,wght@75..125,300..700&family=Share+Tech+Mono&display=swap">
 <link rel="stylesheet" href="/static/phone.css">
 </head>
 <body>
@@ -26,6 +26,7 @@
 
     <!-- Pairing -->
     <section id="pair" class="view pair">
+      <p class="brand big">J.A.R.V.I.S.</p>
       <h1>Pair this phone with JARVIS</h1>
       <p>Paste the pairing token shown when the server started. It stays on this device.</p>
       <form id="pair-form">
@@ -42,11 +43,21 @@
 
     <!-- Main assistant view -->
     <section id="main" class="view hidden">
-      <div class="stage">
-        <canvas id="orb" width="560" height="560" aria-hidden="true"></canvas>
-        <p id="state" class="state" aria-live="polite">Connecting</p>
+      <div class="hud-top">
+        <span class="hud-tag"><i id="link-dot" class="led"></i><span id="link-text">LINK</span></span>
+        <span class="hud-tag mono" id="hud-model">LOCAL</span>
         <button id="wake-toggle" class="wake" aria-pressed="false" title="Listen for Hey JARVIS">
           <span class="dot"></span><span id="wake-label">Hey JARVIS is off</span>
+        </button>
+      </div>
+      <div class="stage">
+        <canvas id="orb" width="720" height="720" aria-hidden="true"></canvas>
+        <div class="stage-text">
+          <p class="brand">J.A.R.V.I.S.</p>
+          <p id="state" class="state" aria-live="polite">Connecting</p>
+        </div>
+        <button id="convo-toggle" class="convo" aria-pressed="true" title="Keep listening after JARVIS answers">
+          <span class="dot"></span><span>Conversation</span>
         </button>
       </div>
       <ol id="log" class="log" aria-live="polite"></ol>
@@ -55,6 +66,9 @@
           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12z" fill="currentColor"/></svg>
         </button>
         <input id="text" placeholder="Ask JARVIS" autocomplete="off" maxlength="2000" aria-label="Message">
+        <button type="button" id="call-btn" class="callbtn" aria-label="Call JARVIS" title="Call JARVIS">
+          <svg viewBox="0 0 24 24" width="20" height="20"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z" fill="currentColor"/></svg>
+        </button>
         <button type="submit" class="send" aria-label="Send">
           <svg viewBox="0 0 24 24" width="20" height="20"><path d="M3 20.5 21 12 3 3.5v6.6L15 12 3 13.9z" fill="currentColor"/></svg>
         </button>
@@ -106,6 +120,11 @@
         <label class="choice"><input type="radio" name="stt" value="phone">
           <span>Phone recognizer<span class="sub">Faster, can work offline, weaker with accents.</span></span></label>
         <p id="stt-note" class="sub"></p>
+      </div>
+      <h3>Conversation</h3>
+      <div class="prov-form">
+        <label class="choice"><input type="checkbox" id="convo-on" checked>
+          <span>Keep listening after JARVIS answers<span class="sub">Talk back and forth without saying "Hey JARVIS" again. Stops after a few seconds of silence, or when you say "thanks" or "that's all".</span></span></label>
       </div>
       <h3>Morning call</h3>
       <div class="prov-form">
@@ -209,6 +228,43 @@
           <button id="appr-editbtn" class="ghost hidden">Edit</button>
           <button id="appr-yes" class="primary"><span class="fill"></span><span id="appr-yes-label">Approve</span></button>
         </div>
+      </div>
+    </div>
+
+    <!-- Voice call with JARVIS (hands-free conversation) -->
+    <div id="call" class="callscreen hidden" role="dialog" aria-modal="true" aria-labelledby="call-title">
+      <div class="call-head">
+        <p class="hud-tag mono"><i class="led on"></i>SECURE VOICE LINK</p>
+        <h2 id="call-title">JARVIS</h2>
+        <p id="call-time" class="mono">00:00</p>
+      </div>
+      <canvas id="call-orb" width="720" height="720" aria-hidden="true"></canvas>
+      <p id="call-state" class="call-state" aria-live="polite">Connecting</p>
+      <div class="captions" aria-live="polite">
+        <p id="cap-you" class="cap-you"></p>
+        <p id="cap-jarvis" class="cap-jarvis"></p>
+      </div>
+      <div class="call-ctl">
+        <button id="call-mute" class="ctl" aria-pressed="false"><span class="ic">
+          <svg viewBox="0 0 24 24" width="24" height="24"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12z" fill="currentColor"/></svg></span><span>Mute</span></button>
+        <button id="call-end" class="ctl end" aria-label="End call"><span class="ic">
+          <svg viewBox="0 0 24 24" width="28" height="28"><path d="M12 9c-1.6 0-3.15.25-4.6.72v3.1a1 1 0 0 1-.56.9 11.5 11.5 0 0 0-2.66 1.85 1 1 0 0 1-1.41 0L.29 13.08a1 1 0 0 1 0-1.41A16.9 16.9 0 0 1 12 7c4.5 0 8.6 1.75 11.71 4.67a1 1 0 0 1 0 1.41l-2.48 2.49a1 1 0 0 1-1.41 0 11.3 11.3 0 0 0-2.67-1.85 1 1 0 0 1-.56-.9v-3.1A15 15 0 0 0 12 9z" fill="currentColor"/></svg></span><span>End</span></button>
+        <button id="call-skip" class="ctl"><span class="ic">
+          <svg viewBox="0 0 24 24" width="24" height="24"><path d="M7 6h3.5v12H7zm6.5 0H17v12h-3.5z" fill="currentColor"/></svg></span><span>Interrupt</span></button>
+      </div>
+    </div>
+    <!-- JARVIS calling you -->
+    <div id="ring" class="callscreen ringing hidden" role="alertdialog" aria-modal="true" aria-labelledby="ring-title">
+      <div class="call-head">
+        <p class="hud-tag mono"><i class="led on"></i>INCOMING</p>
+        <h2 id="ring-title">JARVIS is calling</h2>
+        <p id="ring-reason"></p>
+      </div>
+      <div class="ring-rings"><span></span><span></span><span></span><b>J</b></div>
+      <div class="call-ctl two">
+        <button id="ring-no" class="ctl end"><span class="ic">✕</span><span>Decline</span></button>
+        <button id="ring-yes" class="ctl accept"><span class="ic">
+          <svg viewBox="0 0 24 24" width="26" height="26"><path d="M6.6 10.8a15.1 15.1 0 0 0 6.6 6.6l2.2-2.2a1 1 0 0 1 1-.25 11.4 11.4 0 0 0 3.6.57 1 1 0 0 1 1 1V20a1 1 0 0 1-1 1A17 17 0 0 1 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.45.57 3.57a1 1 0 0 1-.25 1z" fill="currentColor"/></svg></span><span>Answer</span></button>
       </div>
     </div>
 

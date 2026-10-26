@@ -185,3 +185,23 @@ def test_colour_keeps_length_and_level():
     x = (0.5 * np.sin(np.linspace(0, 2000, 22050 * 2))).astype(np.float32)
     y = synthetic_colour(x, 22050, 0.93)
     assert abs(len(y) - len(x) / 0.93) < 2 and float(np.max(np.abs(y))) <= 0.9
+
+
+def test_call_me_schedules_a_ringing_call(brain):
+    r = brain.handle("call me at 6pm about the laundry")
+    assert "call you" in r.reply and "laundry" in r.reply
+    last = brain.svc.device.log[-1] if hasattr(brain.svc.device, "log") else None
+    if last:
+        assert last[0] == "set_reminder" and last[1]["call"] is True
+    assert "When" in brain.handle("call me").reply or "time" in brain.handle("call me").reply
+
+
+def test_kokoro_voice_when_installed():
+    pytest.importorskip("kokoro_onnx")
+    import os
+    from jarvis.voice.speech import available_voices, speak
+    md = os.path.join(os.path.dirname(os.path.dirname(__file__)), "models")
+    if not any(v["id"] == "george" for v in available_voices(md)):
+        pytest.skip("Kokoro model files not downloaded")
+    wav = speak("Hello there.", "jarvis", md)
+    assert wav[:4] == b"RIFF" and len(wav) > 20000

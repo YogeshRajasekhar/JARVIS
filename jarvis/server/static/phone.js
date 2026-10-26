@@ -19,53 +19,131 @@ const secret = {
   async del() { if (Native?.secureSet) return Native.secureSet({ key: "jarvis_token", value: null }); store.del("jarvis_token"); },
 };
 let ws = null, wsReady = false, retry = 0;
+// conversation / call state (see "conversation mode and calls")
+let followUp = false, speakingNow = false;
+let convoOn = store.get("jarvis_convo") !== "0";
+let convoActive = false, userWrapped = false, misses = 0;
+let inCall = false, callMuted = false, callStart = 0, callTimer = null;
 
-// ------------------------------------------------------------------ orb (the one bold element)
-const orb = (() => {
-  const c = $("orb"), ctx = c.getContext("2d");
-  const W = c.width, H = c.height, cx = W / 2, cy = H / 2;
-  let mode = "idle", level = 0, t = 0;
+
+// ------------------------------------------------------------------ the reactor (the one bold element)
+// A gold holographic HUD drawn on canvas: tick ring, counter-rotating arc segments, a voice-reactive
+// waveform ring, coil blades and a white-hot core. Additive blending gives the glow without blur filters.
+function makeReactor(c) {
+  const ctx = c.getContext("2d");
+  const W = c.width, H = c.height, cx = W / 2, cy = H / 2, R = W / 2;
+  let mode = "idle", level = 0, smooth = 0, t = 0, last = performance.now();
   const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const rings = Array.from({ length: 7 }, (_, i) => ({
-    r: 70 + i * 26, w: 1 + (i % 3), segs: 3 + (i * 5) % 9, speed: (i % 2 ? 1 : -1) * (0.15 + i * 0.05), phase: i * 1.7,
-  }));
-  const sparks = Array.from({ length: 140 }, () => ({ a: Math.random() * 6.283, r: 40 + Math.random() * 220, s: 0.2 + Math.random() }));
-  const speed = { idle: 0.4, listening: 1.6, thinking: 2.6, speaking: 1.2, offline: 0.1 };
-  function frame() {
-    t += 0.016 * (speed[mode] ?? 1);
+  const BARS = 120, bars = new Float32Array(BARS);
+  const arcs = [
+    { r: .80, w: 3, segs: [[0, .9], [1.15, 1.9], [2.2, 3.5], [3.8, 4.1], [4.4, 5.8]], v: .22 },
+    { r: .74, w: 1.5, segs: [[0, .3], [.5, 2.6], [3.0, 3.2], [3.5, 5.9]], v: -.34 },
+    { r: .44, w: 2, segs: [[0, 1.4], [1.7, 3.0], [3.3, 4.6], [4.9, 6.0]], v: .5 },
+  ];
+  const sparks = Array.from({ length: 70 }, () => ({ a: Math.random() * 6.283, r: .3 + Math.random() * .62, s: .2 + Math.random(), z: Math.random() }));
+  const speed = { idle: .35, listening: 1.2, thinking: 2.4, speaking: 1, offline: .08 };
+  const gold = (a) => `rgba(255,181,71,${a})`, core = (a) => `rgba(255,231,176,${a})`, amber = (a) => `rgba(255,148,24,${a})`;
+  function ring(r, w, col) { ctx.lineWidth = w; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r, 0, 6.283); ctx.stroke(); }
+  function arc(r, a0, a1, w, col) { ctx.lineWidth = w; ctx.strokeStyle = col; ctx.beginPath(); ctx.arc(cx, cy, r, a0, a1); ctx.stroke(); }
+  function frame(now) {
+    const dt = Math.min(.05, ((now ?? performance.now()) - last) / 1000); last = now ?? performance.now();
+    if (c.offsetParent === null || document.hidden) { if (!reduce) requestAnimationFrame(frame); return; }
+    const off = mode === "offline";
+    t += dt * (speed[mode] ?? 1);
+    // voice energy: real mic/voice level when we have it, a synthetic cadence while the phone voice speaks
+    const synth = mode === "speaking" ? .35 + .3 * Math.sin(t * 13) * Math.sin(t * 3.1) + .15 * Math.sin(t * 29) : 0;
+    const target = Math.max(level, synth, mode === "listening" ? .06 : 0);
+    smooth += (target - smooth) * Math.min(1, dt * 12);
     ctx.clearRect(0, 0, W, H);
-    const pulse = mode === "speaking" ? 0.5 + 0.5 * Math.sin(t * 9) : mode === "listening" ? 0.3 + level : 0.15;
-    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 120 + pulse * 30);
-    g.addColorStop(0, `rgba(255,217,138,${0.55 + pulse * 0.35})`);
-    g.addColorStop(0.35, "rgba(242,164,58,0.25)");
-    g.addColorStop(1, "rgba(242,164,58,0)");
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, 160, 0, 6.283); ctx.fill();
-    for (const ring of rings) {
-      const seg = 6.283 / ring.segs;
-      ctx.lineWidth = ring.w;
-      for (let k = 0; k < ring.segs; k++) {
-        const a0 = ring.phase + t * ring.speed + k * seg;
-        const len = seg * (0.35 + 0.3 * Math.sin(k * 3.1 + t * 0.7));
-        ctx.strokeStyle = `rgba(242,164,58,${mode === "offline" ? 0.15 : 0.35 + 0.4 * ((k + ring.segs) % 3) / 3})`;
-        ctx.beginPath(); ctx.arc(cx, cy, ring.r * (1 + pulse * 0.04), a0, a0 + len); ctx.stroke();
+    ctx.globalCompositeOperation = "lighter";
+    // halo
+    const halo = ctx.createRadialGradient(cx, cy, R * .05, cx, cy, R * (.62 + smooth * .12));
+    halo.addColorStop(0, core(off ? .15 : .55 + smooth * .3)); halo.addColorStop(.25, amber(off ? .06 : .28 + smooth * .2));
+    halo.addColorStop(.6, amber(.06)); halo.addColorStop(1, amber(0));
+    ctx.fillStyle = halo; ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.283); ctx.fill();
+    const a = off ? .25 : 1;
+    // outer tick ring with a travelling highlight
+    const rot = t * .08, scan = (t * .9) % 6.283;
+    for (let i = 0; i < 180; i++) {
+      const ang = rot + i * 6.283 / 180, major = i % 15 === 0;
+      const lit = Math.abs(((ang - scan) % 6.283 + 6.283) % 6.283 - 3.14) / 3.14;   // 1 at the scan head
+      const r0 = R * (major ? .885 : .91), r1 = R * .955;
+      ctx.lineWidth = major ? 2.4 : 1.2;
+      ctx.strokeStyle = gold(a * ((major ? .55 : .2) + .6 * Math.pow(lit, 8)));
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * r0, cy + Math.sin(ang) * r0); ctx.lineTo(cx + Math.cos(ang) * r1, cy + Math.sin(ang) * r1); ctx.stroke();
+    }
+    ring(R * .975, 1, gold(.25 * a)); ring(R * .86, 1, gold(.18 * a));
+    // counter-rotating arc segments (wide faint pass + thin bright pass = glow)
+    for (const g of arcs) {
+      const base = t * g.v;
+      for (const [s0, s1] of g.segs) {
+        arc(R * g.r, base + s0, base + s1, g.w * 4, amber(.07 * a));
+        arc(R * g.r, base + s0, base + s1, g.w, gold(.75 * a));
       }
     }
-    ctx.fillStyle = "rgba(255,217,138,0.8)";
-    for (const p of sparks) {
-      const a = p.a + t * 0.2 * p.s * (mode === "thinking" ? 3 : 1);
-      const r = p.r + Math.sin(t * p.s + p.a) * 6;
-      ctx.globalAlpha = 0.2 + 0.6 * p.s * (mode === "offline" ? 0.2 : 1);
-      ctx.fillRect(cx + Math.cos(a) * r, cy + Math.sin(a) * r * 0.92, 1.6, 1.6);
+    // thinking: a sweeping scanner wedge
+    if (mode === "thinking") {
+      const sw = t * 2.2, grd = ctx.createConicGradient ? ctx.createConicGradient(sw, cx, cy) : null;
+      if (grd) {
+        grd.addColorStop(0, gold(.35)); grd.addColorStop(.08, gold(0)); grd.addColorStop(1, gold(0));
+        ctx.fillStyle = grd; ctx.beginPath(); ctx.arc(cx, cy, R * .86, 0, 6.283); ctx.arc(cx, cy, R * .5, 0, 6.283, true); ctx.fill();
+      }
     }
-    ctx.globalAlpha = 1;
+    // waveform ring: one bar per 3 degrees, pushed out by voice energy
+    const wr = R * .58;
+    for (let i = 0; i < BARS; i++) {
+      const n = .5 + .5 * Math.sin(i * .9 + t * 7) * Math.sin(i * .37 - t * 4.3);
+      const want = smooth * (.25 + .75 * n);
+      bars[i] += (want - bars[i]) * Math.min(1, dt * 18);
+      const ang = i * 6.283 / BARS - 1.5708, len = R * (.012 + bars[i] * .13);
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = (i % 2 ? gold : core)((.35 + bars[i] * .6) * a);
+      ctx.beginPath(); ctx.moveTo(cx + Math.cos(ang) * wr, cy + Math.sin(ang) * wr);
+      ctx.lineTo(cx + Math.cos(ang) * (wr + len), cy + Math.sin(ang) * (wr + len)); ctx.stroke();
+    }
+    ring(wr - 4, 1, gold(.3 * a));
+    // coil blades around the core
+    const blades = 10, br0 = R * .24, br1 = R * .36, bspin = -t * .25;
+    for (let k = 0; k < blades; k++) {
+      const a0 = bspin + k * 6.283 / blades, a1 = a0 + 6.283 / blades * .62;
+      ctx.fillStyle = amber((.16 + smooth * .2) * a); ctx.strokeStyle = gold(.7 * a); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.arc(cx, cy, br1, a0, a1); ctx.arc(cx, cy, br0, a1 - .05, a0 + .05, true); ctx.closePath(); ctx.fill(); ctx.stroke();
+    }
+    ring(R * .2, 2, core(.8 * a)); ring(R * .385, 1, gold(.5 * a));
+    // white-hot core
+    const pulse = .5 + .5 * Math.sin(t * 2.2);
+    const cg = ctx.createRadialGradient(cx, cy, 0, cx, cy, R * (.19 + smooth * .04));
+    cg.addColorStop(0, `rgba(255,255,245,${off ? .2 : .95})`); cg.addColorStop(.35, core(off ? .15 : .75 + pulse * .1));
+    cg.addColorStop(.75, amber(off ? .08 : .35)); cg.addColorStop(1, amber(0));
+    ctx.fillStyle = cg; ctx.beginPath(); ctx.arc(cx, cy, R * .23, 0, 6.283); ctx.fill();
+    // drifting particles
+    for (const p of sparks) {
+      const ang = p.a + t * .15 * p.s * (mode === "thinking" ? 3 : 1), r = R * (p.r + Math.sin(t * p.s + p.a) * .015);
+      ctx.fillStyle = core((.25 + .6 * p.z) * a);
+      const sz = 1.2 + p.z * 1.8;
+      ctx.fillRect(cx + Math.cos(ang) * r, cy + Math.sin(ang) * r, sz, sz);
+    }
+    // small HUD readouts
+    ctx.globalCompositeOperation = "source-over";
+    ctx.font = `${Math.round(R * .045)}px "Share Tech Mono", monospace`; ctx.fillStyle = gold(.55 * a); ctx.textAlign = "center";
+    ctx.fillText(`${(97 + Math.sin(t * .3) * 2).toFixed(1)}%`, cx, cy - R * .655);
     if (!reduce) requestAnimationFrame(frame);
   }
-  frame();
-  return { set(m) { mode = m; if (reduce) frame(); }, level(v) { level = Math.min(1, v); } };
-})();
+  requestAnimationFrame(frame);
+  return { set(m) { mode = m; if (reduce) frame(); }, level(v) { level = Math.max(0, Math.min(1, v)); } };
+}
+const orb = makeReactor($("orb"));
+const callOrb = makeReactor($("call-orb"));
+const reactors = [orb, callOrb];
+const orbAll = { set: (m) => reactors.forEach((r) => r.set(m)), level: (v) => reactors.forEach((r) => r.level(v)) };
 
 const STATE_TEXT = { idle: "Ready", listening: "Listening", thinking: "Thinking", speaking: "Speaking", offline: "Reconnecting" };
-function setState(m) { orb.set(m); $("state").textContent = STATE_TEXT[m] || m; }
+function setState(m) {
+  orbAll.set(m); $("state").textContent = STATE_TEXT[m] || m;
+  $("call-state").textContent = callMuted && m === "idle" ? "Muted" : (STATE_TEXT[m] || m);
+  const linkOk = m !== "offline"; $("link-dot").classList.toggle("on", linkOk); $("link-dot").classList.toggle("bad", !linkOk);
+  $("link-text").textContent = linkOk ? "LINK" : "NO LINK";
+}
 
 // ------------------------------------------------------------------ simulated phone (browser only)
 const phone = {
@@ -102,7 +180,9 @@ async function runDevice(command, args) {
     case "set_reminder": {
       phone.reminders.push({ ...args }); renderClock();
       const ms = new Date(args.at_iso).getTime() - Date.now();
-      if (ms > 0 && ms < 2 ** 31) setTimeout(() => { toast(`Reminder: ${args.label}`); speak(`Reminder: ${args.label}.`); }, ms);
+      if (ms > 0 && ms < 2 ** 31) setTimeout(() => {
+        if (args.call) showRing(args.label); else { toast(`Reminder: ${args.label}`); speak(`Reminder: ${args.label}.`); }
+      }, ms);
       return { ok: true };
     }
     case "open_app": {
@@ -142,8 +222,19 @@ function pickVoice() {
 }
 if ("speechSynthesis" in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
 let muted = false;
+let interruptSpeak = null;
+function stopSpeaking() {
+  try { playing?.pause(); } catch {}
+  window.speechSynthesis?.cancel?.();
+  Native?.stopSpeaking?.().catch(() => {});
+  interruptSpeak?.();
+}
 async function speak(text) {
   if (muted || !text) return;
+  // Resolves when speech ends OR when you interrupt it (tap the reactor, Interrupt on a call).
+  return Promise.race([speakInner(text), new Promise((r) => { interruptSpeak = r; })]).finally(() => { interruptSpeak = null; });
+}
+async function speakInner(text) {
   const clean = text.replace(/https?:\/\/\S+/g, "the link").replace(/\S+@\S+\.\S+/g, (m) => m.split("@")[0]);
   setState("speaking");
   try {
@@ -166,7 +257,8 @@ let playing = null;
 function ttsChunks(text) {
   const parts = text.match(/[^.!?]+[.!?]*\s*/g) || [text];
   const out = []; let cur = "";
-  for (const p of parts) { if ((cur + p).length > 420 && cur) { out.push(cur); cur = ""; } cur += p; }
+  // The first chunk is one sentence so JARVIS starts talking quickly; the rest is fetched while it speaks.
+  for (const p of parts) { if (cur && (out.length === 0 || (cur + p).length > 360)) { out.push(cur); cur = ""; } cur += p; }
   if (cur.trim()) out.push(cur);
   return out.slice(0, 6);
 }
@@ -178,6 +270,24 @@ async function fetchTts(text) {
     return r.ok ? await r.blob() : null;
   } catch { return null; } finally { clearTimeout(t); }
 }
+// Drive the reactor from the actual voice audio.
+let audioCtx = null;
+function meterAudio(el) {
+  try {
+    audioCtx = audioCtx || new AudioContext();
+    const src = audioCtx.createMediaElementSource(el), an = audioCtx.createAnalyser();
+    an.fftSize = 512; src.connect(an); an.connect(audioCtx.destination);
+    const buf = new Uint8Array(an.fftSize);
+    const tick = () => {
+      if (playing !== el) return;
+      an.getByteTimeDomainData(buf);
+      let sum = 0; for (const v of buf) sum += (v - 128) * (v - 128);
+      orbAll.level(Math.sqrt(sum / buf.length) / 40);
+      requestAnimationFrame(tick);
+    };
+    tick();
+  } catch { /* metering is cosmetic */ }
+}
 async function speakServer(text) {
   const chunks = ttsChunks(text);
   let next = fetchTts(chunks[0]);
@@ -188,10 +298,11 @@ async function speakServer(text) {
     const url = URL.createObjectURL(blob);
     try {
       await new Promise((res) => {
-        playing = new Audio(url); playing.onended = res; playing.onerror = res;
+        playing = new Audio(url); playing.onended = res; playing.onerror = res; playing.onpause = res;
+        meterAudio(playing);
         playing.play().catch(res); setTimeout(res, 30000);
       });
-    } finally { URL.revokeObjectURL(url); playing = null; }
+    } finally { URL.revokeObjectURL(url); playing = null; orbAll.level(0); }
     if (muted) break;
   }
   return true;
@@ -206,7 +317,8 @@ let serverStt = false;  // set from /api/status at start
 let stopRecording = null;
 
 async function listen() {
-  if (listening) return;
+  if (listening || (inCall && callMuted)) return;
+  if (speakingNow) stopSpeaking();
   window.speechSynthesis?.cancel?.();   // absent in Android's WebView: must go through window
   playing?.pause();
   if (sttMode === "whisper" && serverStt) return recordForServer();
@@ -228,7 +340,7 @@ async function listen() {
     if (r?.text) { send(r.text, "voice"); return; }
     Native.resumeWake?.();
     const err = failed || r?.error;
-    if (!err || err === "no_match" || err === "timeout") { note("I didn't catch that. Tap the mic and try again."); return; }
+    if (!err || err === "no_match" || err === "timeout") { noSpeech("I didn't catch that. Tap the mic and try again."); return; }
     if (/permission/i.test(err)) { note("JARVIS needs the microphone. Allow it in Settings > Apps > JARVIS > Permissions."); return; }
     // Phone recognizer missing or broken (common on some Samsung phones): record here, transcribe on the server.
     note(`Phone speech recognition failed (${err}); using server transcription instead.`);
@@ -243,7 +355,10 @@ async function listen() {
     for (const r of e.results) (r.isFinal ? (finalText = r[0].transcript) : (interim = r[0].transcript));
     $("text").value = finalText || interim;
   };
-  rec.onend = () => { listening = false; $("mic").classList.remove("live"); setState("idle"); if (finalText.trim()) { $("text").value = ""; send(finalText, "voice"); } };
+  rec.onend = () => {
+    listening = false; $("mic").classList.remove("live"); setState("idle");
+    if (finalText.trim()) { $("text").value = ""; send(finalText, "voice"); } else if (followUp) noSpeech();
+  };
   rec.onerror = () => {};
   listening = true; $("mic").classList.add("live"); setState("listening");
   rec.start();
@@ -255,7 +370,7 @@ async function transcribeAndSend(blob) {
   const r = await api("/api/stt", { method: "POST", body: blob, raw: true }).catch(() => null);
   setState("idle");
   if (r?.text?.trim()) send(r.text, "voice");
-  else if (r) note("I couldn't make out the words. Try again, a little closer to the phone.");
+  else if (r) noSpeech("I couldn't make out the words. Try again, a little closer to the phone.");
   else note("Transcription failed. Check Settings > Language models has a Groq or OpenAI key, or switch voice input to the phone.");
 }
 
@@ -264,14 +379,15 @@ async function recordNative() {
   listening = true; setState("listening"); $("mic").classList.add("live");
   stopRecording = () => Native.stopRecord?.();
   let r = null, err = null;
-  try { r = await Native.record({ maxMs: 15000 }); } catch (e) { err = String(e?.message || e); }
-  stopRecording = null; listening = false; $("mic").classList.remove("live"); orb.level(0);
+  try { r = await Native.record({ maxMs: 20000, waitMs: followUp ? (inCall ? 9000 : 6000) : 7000, silenceMs: inCall ? 1000 : 1200 }); }
+  catch (e) { err = String(e?.message || e); }
+  stopRecording = null; listening = false; $("mic").classList.remove("live"); orbAll.level(0);
   if (err) {
     setState("idle");
     note(/permission/i.test(err) ? "JARVIS needs the microphone. Allow it in Settings > Apps > JARVIS > Permissions." : err);
     return;
   }
-  if (!r?.heard) { setState("idle"); note("I didn't hear anything. Tap the mic and speak."); return; }
+  if (!r?.heard) { setState("idle"); noSpeech(); return; }
   const bin = atob(r.wav), bytes = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
   await transcribeAndSend(new Blob([bytes], { type: "audio/wav" }));
@@ -301,19 +417,20 @@ async function recordForServer() {
     an.getFloatTimeDomainData(buf);
     let sum = 0; for (const v of buf) sum += v * v;
     const rms = Math.sqrt(sum / buf.length), now = performance.now();
-    orb.level(rms * 10);
+    orbAll.level(rms * 10);
     // Background level follows the quietest moments (fast down, slow up), so starting to speak
     // immediately doesn't get mistaken for noise.
     noise = rms < noise ? rms : noise * 0.995 + rms * 0.005;
     if (rms > Math.max(0.012, noise * 3)) { heard = true; lastLoud = now; }
-    if ((heard && now - lastLoud > 1300) || now - t0 > 15000 || (!heard && now - t0 > 7000)) finish();
+    const waitMs = followUp ? (inCall ? 9000 : 6000) : 7000;
+    if ((heard && now - lastLoud > (inCall ? 1000 : 1200)) || now - t0 > 20000 || (!heard && now - t0 > waitMs)) finish();
   }, 50);
   mr.start(250);
   mr.onstop = async () => {
     clearInterval(timer); stopRecording = null;
     stream.getTracks().forEach((t) => t.stop()); actx.close();
     listening = false; $("mic").classList.remove("live");
-    if (!heard) { setState("idle"); Native?.resumeWake?.(); note("I didn't hear anything. Tap the mic and speak."); return; }
+    if (!heard) { setState("idle"); Native?.resumeWake?.(); noSpeech(); return; }
     Native?.resumeWake?.();
     await transcribeAndSend(new Blob(chunks, { type: mr.mimeType || "audio/webm" }));
   };
@@ -326,8 +443,151 @@ $("mic").onclick = () => {
     note("Stopped listening. Tap the mic again to talk.");
     return;
   }
+  followUp = false;
   listen();
 };
+
+// ------------------------------------------------------------------ conversation mode and calls
+// After JARVIS answers a spoken request, the mic opens again by itself, like talking to a person.
+// It closes after a few quiet seconds, or when you wrap up ("thanks", "that's all", "bye").
+// A call is the same loop, hands-free and open until you hang up.
+const WRAP_RX = /^(?:ok(?:ay)?[,.! ]*)?(?:thanks?(?: a lot)?(?: you)?|thank you(?: so much)?|that'?s (?:all|it|everything)|that will be all|bye|good ?bye|good night|stop(?: listening)?|nothing(?: else)?|no(?:,)? thanks?|never ?mind|end(?: the)? call|hang up)(?:[,.! ]*jarvis)?[.! ]*$/i;
+
+function renderConvo() {
+  $("convo-toggle").setAttribute("aria-pressed", String(convoOn));
+  if ($("convo-on")) $("convo-on").checked = convoOn;
+}
+function setConvo(on) { convoOn = on; store.set("jarvis_convo", on ? "1" : "0"); if (!on) convoActive = false; renderConvo(); }
+$("convo-toggle").onclick = () => setConvo(!convoOn);
+$("convo-on").onchange = (e) => setConvo(e.target.checked);
+renderConvo();
+
+function noSpeech(hint) {
+  if (inCall) {                                    // on a call, silence is fine: keep the line open
+    misses++;
+    if (misses >= 5) { say("I'll hang up for now. Call me any time.").then(() => endCall()); return; }
+    setTimeout(continueConvo, 250);
+    return;
+  }
+  if (followUp) { convoActive = false; followUp = false; softTone(false); return; }   // conversation simply ends
+  note(hint || "I didn't hear anything. Tap the mic and speak.");
+}
+function continueConvo() {
+  if (listening || speakingNow) return;
+  if (inCall ? callMuted : !convoActive) return;
+  if (!$("appr").classList.contains("hidden") && !inCall && !convoActive) return;
+  followUp = true;
+  if (!inCall) softTone(true);
+  listen();
+}
+// After every reply: keep talking if this was a spoken exchange.
+async function afterReply(m) {
+  if (inCall) $("cap-jarvis").textContent = m.reply || "";
+  speakingNow = true;
+  try { await speak(m.reply); } finally { speakingNow = false; }
+  if (inCall) {
+    if (userWrapped) { endCall(); return; }
+    misses = 0; continueConvo(); return;
+  }
+  if (convoActive) {
+    if (userWrapped) { convoActive = false; return; }
+    continueConvo();
+  }
+}
+async function say(text) {                         // JARVIS speaks without a server round trip
+  if (inCall) $("cap-jarvis").textContent = text;
+  speakingNow = true; setState("speaking");
+  try { await speak(text); } finally { speakingNow = false; setState("idle"); }
+}
+// Two short tones: rising = "I'm listening again", falling = "conversation over".
+function softTone(up) {
+  try {
+    audioCtx = audioCtx || new AudioContext();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain(), now = audioCtx.currentTime;
+    o.type = "sine"; o.frequency.setValueAtTime(up ? 660 : 880, now); o.frequency.linearRampToValueAtTime(up ? 990 : 520, now + .12);
+    g.gain.setValueAtTime(.0001, now); g.gain.exponentialRampToValueAtTime(.08, now + .02); g.gain.exponentialRampToValueAtTime(.0001, now + .16);
+    o.connect(g); g.connect(audioCtx.destination); o.start(now); o.stop(now + .18);
+  } catch {}
+}
+
+// ---- call screen
+const mmss = (ms) => { const s2 = Math.floor(ms / 1000); return `${pad(Math.floor(s2 / 60))}:${pad(s2 % 60)}`; };
+async function startCall(opts = {}) {
+  if (inCall) return;
+  hideRing();
+  inCall = true; callMuted = false; misses = 0; userWrapped = false;
+  $("call-mute").setAttribute("aria-pressed", "false");
+  $("cap-you").textContent = ""; $("cap-jarvis").textContent = "";
+  $("call").classList.remove("hidden");
+  callStart = Date.now(); $("call-time").textContent = "00:00";
+  clearInterval(callTimer); callTimer = setInterval(() => { $("call-time").textContent = mmss(Date.now() - callStart); }, 1000);
+  Native?.keepAwake?.({ on: true }).catch(() => {});
+  for (let i = 0; i < 40 && !wsOpen(); i++) await new Promise((r) => setTimeout(r, 250));   // link settles after a cold start
+  if (opts.brief) { send("overnight report", "voice"); return; }
+  const who = myName ? myName.split(" ")[0] : "sir";
+  const hello = opts.reason ? `Hello ${who}. You asked me to call you: ${opts.reason}.` : `JARVIS here. What can I do for you, ${who}?`;
+  await say(hello);
+  continueConvo();
+}
+function endCall() {
+  if (!inCall) return;
+  inCall = false; callMuted = false; convoActive = false; followUp = false;
+  stopSpeaking();
+  if (listening && stopRecording) stopRecording();
+  clearInterval(callTimer);
+  const dur = mmss(Date.now() - callStart);
+  $("call").classList.add("hidden");
+  Native?.keepAwake?.({ on: false }).catch(() => {});
+  note(`Call ended, ${dur}.`);
+  setState(wsOpen() ? "idle" : "offline");
+}
+$("call-btn").onclick = () => startCall();
+$("call-end").onclick = () => endCall();
+$("call-mute").onclick = () => {
+  callMuted = !callMuted;
+  $("call-mute").setAttribute("aria-pressed", String(callMuted));
+  if (callMuted && listening && stopRecording) stopRecording();
+  if (callMuted) $("call-state").textContent = "Muted"; else continueConvo();
+};
+$("call-skip").onclick = () => { if (speakingNow) stopSpeaking(); else continueConvo(); };
+// Tap the reactor: interrupt JARVIS, or start talking.
+for (const id of ["orb", "call-orb"]) $(id).addEventListener("click", () => {
+  if (speakingNow) { stopSpeaking(); return; }
+  if (!listening) { followUp = false; listen(); }
+});
+
+// ---- JARVIS calling you (in the app the ringing is a full-screen Android call notification)
+let ringTimer = null, ringStop = null;
+function showRing(reason, opts = {}) {
+  if (inCall) return;
+  $("ring-reason").textContent = reason || "";
+  $("ring").classList.remove("hidden");
+  $("ring-yes").onclick = () => startCall(opts.brief ? { brief: true } : { reason });
+  ringStop = ringtone();
+  clearTimeout(ringTimer); ringTimer = setTimeout(() => { hideRing(); note(`Missed call from JARVIS: ${reason}`); }, 45000);
+}
+function hideRing() { $("ring").classList.add("hidden"); clearTimeout(ringTimer); ringStop?.(); ringStop = null; navigator.vibrate?.(0); }
+$("ring-no").onclick = () => { const r = $("ring-reason").textContent; hideRing(); note(`Declined a call from JARVIS${r ? `: ${r}` : ""}.`); };
+function ringtone() {
+  let alive = true;
+  const beep = () => {
+    if (!alive) return;
+    navigator.vibrate?.([400, 200, 400]);
+    try {
+      audioCtx = audioCtx || new AudioContext();
+      const now = audioCtx.currentTime;
+      for (const [f, d] of [[880, 0], [1320, .18], [880, .36], [1320, .54]]) {
+        const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.frequency.value = f; g.gain.setValueAtTime(.0001, now + d); g.gain.exponentialRampToValueAtTime(.06, now + d + .02);
+        g.gain.exponentialRampToValueAtTime(.0001, now + d + .16); o.connect(g); g.connect(audioCtx.destination); o.start(now + d); o.stop(now + d + .18);
+      }
+    } catch {}
+    setTimeout(beep, 2200);
+  };
+  beep();
+  return () => { alive = false; };
+}
+if (Native?.addListener) Native.addListener("call", (e) => startCall({ reason: e?.reason || "" }));
 
 // ------------------------------------------------------------------ "Hey JARVIS" wake word
 let wakeCtx = null, wakeStream = null;
@@ -355,7 +615,7 @@ async function setWake(on) {
     node.port.onmessage = (e) => {
       if (!listening) wsSend(e.data);
       const a = new Int16Array(e.data); let s = 0; for (let i = 0; i < a.length; i += 8) s += Math.abs(a[i]);
-      if (listening) orb.level(s / (a.length / 8) / 6000);
+      if (listening) orbAll.level(s / (a.length / 8) / 6000);
     };
     src.connect(node);
   } catch (err) {
@@ -465,6 +725,9 @@ $("pair-form").onsubmit = async (e) => {
 function send(text, source = "text") {
   text = text.trim(); if (!text) return;
   addLine("you", text);
+  if (source === "voice") { convoActive = convoOn || inCall; userWrapped = WRAP_RX.test(text); misses = 0; }
+  else if (!inCall) convoActive = false;
+  if (inCall) { $("cap-you").textContent = text; $("cap-jarvis").textContent = ""; }
   setState("thinking");
   if (!wsSend({ type: "message", text, source })) api("/api/message", { method: "POST", body: { text, source } }).then((r) => r && onReply(r));
 }
@@ -475,8 +738,9 @@ function onReply(m) {
   if (m.understood) note(`Understood as: ${m.understood}`);
   const agents = [...new Set(m.agents || [])].filter((a) => a !== "router").join(" + ");
   addLine("jarvis", m.reply, agents, m.cards || []);
-  speak(m.reply);
+  if (m.provider) $("hud-model").textContent = String(m.provider).split(":").pop().split("/").pop().slice(0, 22);
   showRequests(m.pending || []);
+  afterReply(m);
 }
 
 function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
@@ -813,7 +1077,9 @@ async function refreshUpdate(force = false) {
   if (Native?.appVersion) myVersion = await Native.appVersion().catch(() => null);
   const r = force ? await apiDetail("/api/app/check", { method: "POST" }) : await apiDetail("/api/app/update");
   updateInfo = r.ok ? r.data : null;
-  renderUpdate(r.ok ? null : r.error);
+  renderUpdate(r.ok ? null : (r.status === 404 && /not found/i.test(r.error || "")
+    ? "Your server is too old to deliver app updates. Update the server first: cd ~/JARVIS && git pull && sudo deploy/autoupdate.sh install"
+    : r.error));
   return updateInfo;
 }
 function updateIsNewer() {
@@ -937,12 +1203,22 @@ $("voice-test").onclick = () => { muted = false; speak(`Good morning, ${myName |
 let myName = null;
 // The morning call fired and you tapped "Brief me" (or opened the app from it).
 async function onBriefCall() {
+  // You tapped "Brief me" on the morning call: JARVIS is already on the line.
   document.querySelector('#tabs button[data-view=main]')?.click();
-  for (let i = 0; i < 40 && !wsOpen(); i++) await new Promise((r) => setTimeout(r, 250));   // connection settles
-  send("overnight report", "brief");
+  startCall({ brief: true });
 }
 if (Native?.addListener) Native.addListener("brief", () => onBriefCall());
 
+// The app and server are updated separately; say so plainly when the server is behind.
+const NEEDS_API = 4;
+let serverBehind = false;
+async function checkServerVersion() {
+  let api = 0;
+  try { const r = await fetch(SERVER + "/api/health"); api = (await r.json()).api || 0; } catch { return; }
+  serverBehind = api < NEEDS_API;
+  if (serverBehind) note("Your JARVIS server is older than this app, so some features won't work. On the server run: "
+    + "cd ~/JARVIS && git pull && sudo deploy/autoupdate.sh install  (it then keeps itself updated).");
+}
 function renderVoiceChoice() {
   document.querySelectorAll("input[name=stt]").forEach((r) => {
     r.checked = r.value === sttMode;
@@ -1006,14 +1282,18 @@ function start() {
   api("/api/status").then((st) => {
     serverStt = !!st?.server_stt; myName = st?.user || null;
     if (serverVoice == null) serverVoice = st?.server_voice ? "jarvis" : "";
+    const m0 = st?.llm_smart?.find((n) => !/^rule/.test(n)) || "offline";
+    $("hud-model").textContent = m0.split(":").pop().split("/").pop().slice(0, 22);
   }).catch(() => {});
+  checkServerVersion();
   apiDetail("/api/brief").then((r) => r.ok && syncBrief(r.data)).catch(() => {});   // keep the phone alarm in sync
   setTimeout(() => refreshUpdate().then(offerUpdateBanner).catch(() => {}), 3000);
   connect();
 }
 if (!IN_APP) $("server-field").classList.add("hidden");
-if (Native?.addListener) Native.addListener("level", (e) => orb.level(e.level || 0));
+if (Native?.addListener) Native.addListener("level", (e) => orbAll.level(e.level || 0));
 secret.get().then((t) => { token = t; if (token && SERVER) start(); else $("tabs").classList.add("hidden"); });
-window.__jarvis = { send, phone, setWake, listen, speakOff: () => (muted = true),
+window.__jarvis = { send, phone, setWake, listen, speakOff: () => (muted = true), startCall, endCall, showRing,
+  state: () => ({ inCall, convoActive, followUp, listening, speakingNow, callMuted }),
   setStt: (mode, available) => { sttMode = mode; serverStt = available; },
   dropConnection: () => ws?.close() }; // used by automated tests

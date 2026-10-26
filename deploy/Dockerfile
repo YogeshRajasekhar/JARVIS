@@ -12,9 +12,10 @@ RUN pip install --no-cache-dir -r requirements-v2.txt
 COPY src ./src
 COPY jarvis ./jarvis
 COPY scripts ./scripts
-# piper-tts is optional (server voice); the build continues without it.
-RUN (pip install --no-cache-dir piper-tts==1.8.0 && python scripts/download_models.py --dir /app/models --voice) \
-    || python scripts/download_models.py --dir /app/models
+# Server voices are optional; each engine installs on its own so one failure doesn't drop the other.
+RUN pip install --no-cache-dir piper-tts==1.8.0 || echo "piper unavailable"
+RUN pip install --no-cache-dir kokoro-onnx==0.4.9 || echo "kokoro unavailable"
+RUN python scripts/download_models.py --dir /app/models --voice
 
 # Run as an unprivileged user; the only writable place is /data (the volume).
 RUN useradd --create-home --uid 10001 jarvis && mkdir -p /data && chown jarvis /data

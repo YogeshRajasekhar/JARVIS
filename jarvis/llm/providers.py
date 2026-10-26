@@ -45,11 +45,15 @@ _NOT_CHAT = re.compile(r"whisper|tts|orpheus|guard|embed|imagen|image|veo|audio|
                        r"computer-use|robotics|native-audio|dall-e|davinci|babbage|realtime|search|codex|instruct|"
                        r"sora|ocr|rerank|vision-preview|-speech|playai", re.I)
 PREFS = {
-    "groq": {"fast": [r"^llama-3\.1-8b-instant$", r"gpt-oss-20b", r"llama.*8b", r"qwen", r"gpt-oss", r"llama"],
-             "smart": [r"^llama-3\.3-70b-versatile$", r"gpt-oss-120b", r"llama.*70b", r"qwen", r"gpt-oss", r"llama"]},
+    # Open-weight models only on Groq (free): Qwen3 for quick structured tasks (strong at JSON, fast on Groq),
+    # gpt-oss-120b / Kimi K2 for conversation and planning, Llama as the fallback.
+    "groq": {"fast": [r"^qwen/qwen3-32b$", r"qwen3", r"gpt-oss-20b", r"^llama-3\.1-8b-instant$", r"llama.*8b", r"qwen", r"llama"],
+             "smart": [r"gpt-oss-120b", r"kimi-k2-instruct(-\d+)?$", r"^qwen/qwen3-32b$", r"^llama-3\.3-70b-versatile$",
+                       r"llama.*70b", r"qwen", r"gpt-oss", r"llama"]},
     "gemini": {"fast": [r"^gemini-[\d.]+-flash-lite$", r"^gemini-[\d.]+-flash$", r"flash", r"gemma"],
                "smart": [r"^gemini-[\d.]+-flash$", r"^gemini-[\d.]+-flash-[\w-]*$", r"flash", r"gemma"]},
-    "openrouter": {"fast": [r"llama.*:free$", r"qwen.*:free$", r":free$"], "smart": [r"llama.*70b.*:free$", r"gpt-oss-120b:free$", r":free$"]},
+    "openrouter": {"fast": [r"qwen3.*:free$", r"qwen.*:free$", r"llama.*:free$", r":free$"],
+                   "smart": [r"qwen3-235b.*:free$", r"gpt-oss-120b:free$", r"deepseek.*(v3|chat).*:free$", r"llama.*70b.*:free$", r":free$"]},
     # Paid providers: a small model for routing/extraction, the main model for conversation/planning.
     "openai": {"fast": [r"^gpt-[\d.]+o?-mini$", r"^gpt-[\d.]+o?-nano$", r"^gpt-[\d.o]+-mini", r"mini"],
                "smart": [r"^gpt-[\d.]+o?$", r"^gpt-[\d.]+o?-chat", r"^gpt-[\d.o]+$", r"^gpt-"]},
@@ -81,7 +85,15 @@ def pick_model(available: list[str], prefs: list[str], avoid: Optional[set] = No
 
 
 def _is_reasoning(model: Optional[str]) -> bool:
-    return bool(model and re.search(r"gpt-oss|deepseek-r|qwq|reasoning|-r1\b|magistral|^o[1-9](-|$)|^gpt-5", model, re.I))
+    return bool(model and re.search(r"gpt-oss|deepseek-r|qwq|qwen3|reasoning|-r1\b|magistral|^o[1-9](-|$)|^gpt-5", model, re.I))
+
+
+_THINK = re.compile(r"<think>.*?</think>\s*|^.*?</think>\s*", re.S)
+
+
+def strip_thinking(text: str) -> str:
+    """Some open models (Qwen3, DeepSeek-R1) print their reasoning in <think> tags: keep only the answer."""
+    return _THINK.sub("", text).strip() if "think>" in text else text
 
 
 def _model_missing(status: int, text: str) -> bool:
@@ -165,7 +177,8 @@ class OpenAICompatibleLLM:
         if self._temperature_ok:
             body["temperature"] = temperature
         if _is_reasoning(self.model) and self._reasoning_params:
-            body["reasoning_effort"] = "low"
+            # Qwen3 on Groq: "none" turns thinking off (fast, direct answers); gpt-oss only knows low/medium/high.
+            body["reasoning_effort"] = "none" if "qwen3" in self.model.lower() and self.family == "groq" else "low"
             if self.family == "groq":
                 body["reasoning_format"] = "hidden"
         if json and self._json_mode_supported:
@@ -216,7 +229,7 @@ class OpenAICompatibleLLM:
                 raise LLMUnavailable(f"{self.name}: HTTP {r.status_code} {r.text[:200]}")
             try:
                 choice = r.json()["choices"][0]
-                content = choice["message"].get("content") or ""
+                content = strip_thinking(choice["message"].get("content") or "")
             except (KeyError, IndexError, ValueError, TypeError) as e:
                 raise LLMUnavailable(f"{self.name}: malformed response {r.text[:200]}") from e
             if not content.strip():

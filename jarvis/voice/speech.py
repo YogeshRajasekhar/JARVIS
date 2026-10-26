@@ -189,41 +189,97 @@ def synthetic_colour(x, rate: int, pitch: float = 0.93):
     return (out / peak * 0.89).astype(np.float32)
 
 
+# Kokoro (Apache-2.0, 82M parameters): the best free open-source voice that runs on a small CPU server.
+KOKORO_MODEL, KOKORO_VOICES = "kokoro-v1.0.fp16.onnx", "voices-v1.0.bin"
 VOICES = {
-    # id: (file, label, colour)
-    "jarvis": ("en_GB-alan-medium.onnx", "JARVIS (British, synthetic)", True),
-    "british": ("en_GB-alan-medium.onnx", "British male, natural", False),
-    "classic": ("en-us-lessac-low.onnx", "American, natural", False),
+    # id: (engine, file or kokoro voice, label, colour)
+    "jarvis": ("kokoro", "bm_george", "JARVIS (British, HD, synthetic)", "light"),
+    "george": ("kokoro", "bm_george", "George (British, HD)", None),
+    "fable": ("kokoro", "bm_fable", "Fable (British, HD)", None),
+    "lewis": ("kokoro", "bm_lewis", "Lewis (British, HD)", None),
+    "daniel": ("kokoro", "bm_daniel", "Daniel (British, HD)", None),
+    "emma": ("kokoro", "bf_emma", "Emma (British, HD)", None),
+    "fast": ("piper", "en_GB-alan-medium.onnx", "JARVIS fast (British, synthetic)", "full"),
+    "classic": ("piper", "en-us-lessac-low.onnx", "American, fast", None),
 }
 _tts_cache: dict = {}
 
 
+def _kokoro(model_dir: str):
+    key = ("kokoro", model_dir)
+    if key not in _tts_cache:
+        from kokoro_onnx import Kokoro
+        _tts_cache[key] = Kokoro(os.path.join(model_dir, KOKORO_MODEL), os.path.join(model_dir, KOKORO_VOICES))
+    return _tts_cache[key]
+
+
+def _engine_ok(engine: str, f: str, model_dir: str) -> bool:
+    if engine == "kokoro":
+        if not all(os.path.exists(os.path.join(model_dir, x)) for x in (KOKORO_MODEL, KOKORO_VOICES)):
+            return False
+        try:
+            import kokoro_onnx  # noqa: F401
+            return True
+        except ImportError:
+            return False
+    try:
+        import piper  # noqa: F401
+    except ImportError:
+        return False
+    return os.path.exists(os.path.join(model_dir, f))
+
+
 def available_voices(model_dir: str = "./models") -> list[dict]:
-    out = []
-    for vid, (f, label, _) in VOICES.items():
-        if os.path.exists(os.path.join(model_dir, f)):
-            out.append({"id": vid, "label": label})
-    if out and not any(v["id"] == "jarvis" for v in out) and os.path.exists(os.path.join(model_dir, VOICES["classic"][0])):
-        out.insert(0, {"id": "jarvis", "label": "JARVIS (synthetic)"})      # colour over the fallback voice
+    out = [{"id": vid, "label": label} for vid, (eng, f, label, _) in VOICES.items() if _engine_ok(eng, f, model_dir)]
+    if not any(v["id"] == "jarvis" for v in out) and out:        # no HD engine: the fast voice becomes "JARVIS"
+        out.insert(0, {"id": "jarvis", "label": "JARVIS (synthetic)"})
     return out
 
 
+def light_colour(x, rate: int):
+    """A lighter treatment for the HD voice: faint doubling and a small room, no pitch change."""
+    import numpy as np
+    if x.size < rate // 20:
+        return x
+    n = len(x); t = np.arange(n)
+    d = (0.010 + 0.002 * np.sin(2 * np.pi * 0.5 * t / rate)) * rate
+    y = 0.9 * x + 0.14 * np.interp(np.clip(t - d, 0, n - 1), t, x).astype(np.float32)
+    out = y.copy()
+    for ms, g in ((19, 0.12), (31, 0.08), (47, 0.05)):
+        k = int(rate * ms / 1000)
+        out[k:] += g * y[:-k]
+    out = out + 0.18 * np.concatenate([[0.0], np.diff(out)]).astype(np.float32)
+    peak = float(np.max(np.abs(out))) or 1.0
+    return (out / peak * 0.89).astype(np.float32)
+
+
 def speak(text: str, voice: str = "jarvis", model_dir: str = "./models") -> Optional[bytes]:
-    """WAV bytes for `text` in the chosen server voice, or None when no voice file is installed."""
-    f, _, colour = VOICES.get(voice, VOICES["jarvis"])
-    path = os.path.join(model_dir, f)
-    if not os.path.exists(path):
-        path = os.path.join(model_dir, VOICES["classic"][0])
-    if path not in _tts_cache:
+    """WAV bytes for `text` in the chosen server voice, or None when no voice engine is installed."""
+    import numpy as np
+    order = [voice, "jarvis", "fast", "classic"]
+    for vid in dict.fromkeys(order):
+        if vid not in VOICES:
+            continue
+        eng, f, _, colour = VOICES[vid]
+        if not _engine_ok(eng, f, model_dir):
+            continue
         try:
-            _tts_cache[path] = PiperTTS(path)
-        except Exception:
-            return None
-    eng = _tts_cache[path]
-    if not colour:
-        return eng.synthesize(text)
-    x, rate = eng.pcm(text, length_scale=0.93)
-    return to_wav(synthetic_colour(x, rate, 0.93), rate)
+            if eng == "kokoro":
+                x, rate = _kokoro(model_dir).create(text, voice=f, speed=1.0, lang="en-gb")
+                x = np.asarray(x, dtype=np.float32)
+                return to_wav(light_colour(x, rate) if colour else x, rate)
+            path = os.path.join(model_dir, f)
+            if path not in _tts_cache:
+                _tts_cache[path] = PiperTTS(path)
+            p = _tts_cache[path]
+            if not colour:
+                return p.synthesize(text)
+            x, rate = p.pcm(text, length_scale=0.93)
+            return to_wav(synthetic_colour(x, rate, 0.93), rate)
+        except Exception as e:                       # try the next engine
+            import logging
+            logging.getLogger("jarvis.tts").warning("voice %s failed: %s", vid, e)
+    return None
 
 
 def build_tts(model_dir: str = "./models") -> Optional[PiperTTS]:

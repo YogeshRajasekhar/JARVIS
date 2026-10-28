@@ -1238,3 +1238,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-28
 
 **Advice of the day:** A common regret in life is wishing one had the courage to be ones true self.
+
+## 2026-10-28
+
+**Fact of the day:** It has been estimated that humans use only 10% of their brain.

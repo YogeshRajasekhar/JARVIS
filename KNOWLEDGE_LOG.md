@@ -1250,3 +1250,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-29
 
 **Fact of the day:** 98% of all murders and rapes are by a close family member or friend of the victim.
+
+## 2026-10-29
+
+**Advice of the day:** The most important thing is the thing most easily forgotten.

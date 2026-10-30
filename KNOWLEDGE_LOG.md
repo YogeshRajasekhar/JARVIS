@@ -1266,3 +1266,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-30
 
 **Word of the day:** *allspices* (noun) — A spice; the dried and ground unripe fruit of Pimenta dioica, thought to combine the flavours of several spices, such as cinnamon, nutmeg and cloves.
+
+## 2026-10-30
+
+**Fact of the day:** 98% of all murders and rapes are by a close family member or friend of the victim.

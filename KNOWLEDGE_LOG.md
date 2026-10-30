@@ -1262,3 +1262,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-29
 
 **Advice of the day:** Learn from your mistakes.
+
+## 2026-10-30
+
+**Word of the day:** *allspices* (noun) — A spice; the dried and ground unripe fruit of Pimenta dioica, thought to combine the flavours of several spices, such as cinnamon, nutmeg and cloves.

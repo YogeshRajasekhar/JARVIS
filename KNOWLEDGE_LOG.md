@@ -1294,3 +1294,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-31
 
 **Fact of the day:** Oak trees do not produce acorns until they are fifty years of age or older.
+
+## 2026-10-31
+
+**Advice of the day:** Most things are not as bad as you think they are.

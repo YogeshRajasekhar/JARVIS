@@ -1290,3 +1290,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-31
 
 **Word of the day:** *olestra* (noun) — A fat substitute (a glyceride of sucrose) that cannot be easily digested and therefore adds no fat, calories, or cholesterol to food products; also used as an industrial lubricant.
+
+## 2026-10-31
+
+**Fact of the day:** Oak trees do not produce acorns until they are fifty years of age or older.

@@ -1302,3 +1302,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-10-31
 
 **Word of the day:** *swerving* (verb) — To stray; to wander; to rove.
+
+## 2026-11-01
+
+**Fact of the day:** February 1865 is the only month in recorded history not to have a full moon.

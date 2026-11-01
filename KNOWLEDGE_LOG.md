@@ -1314,3 +1314,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-01
 
 **Fact of the day:** The strongest muscle (Relative to size) in the body is the tongue.
+
+## 2026-11-01
+
+**Advice of the day:** It's always the quiet ones.

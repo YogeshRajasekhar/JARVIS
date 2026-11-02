@@ -38,6 +38,10 @@ class DeviceAgent(BaseAgent):
         text = self.say_outcome(out, done)
         if out.status == "done" and isinstance(out.data, dict) and out.data.get("ok") is False:
             text = f"That didn't work: {out.data.get('error', 'unknown error')}."
+        elif out.status == "done" and isinstance(out.data, dict) and out.data.get("needs_tap"):
+            # Android doesn't let a background app open other apps; the phone posted a notification instead.
+            text = ("Android won't let me open that while I'm in the background, so it's waiting in your notifications. "
+                    "Tap it. To skip this next time, allow \"Open apps from the background\" in JARVIS Settings.")
         return AgentReply(self.name, text, [out])
 
     def _do_set_alarm(self, cmd, ctx):

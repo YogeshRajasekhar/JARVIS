@@ -20,11 +20,19 @@ public class UpdateReceiver extends BroadcastReceiver {
                 c.startActivity(confirm);
             }
             lastResult = "waiting";
+            JarvisPlugin.emitUpdateResult("waiting", "");
         } else if (status == PackageInstaller.STATUS_SUCCESS) {
             lastResult = "installed";
+            JarvisPlugin.emitUpdateResult("installed", "");
         } else {
             String msg = i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE);
             lastResult = "failed: " + (msg == null ? ("status " + status) : msg);
+            // BLOCKED: Play Protect, Samsung Auto Blocker or a device policy stopped it. ABORTED: "Don't install" / cancel.
+            String kind = status == PackageInstaller.STATUS_FAILURE_BLOCKED ? "blocked"
+                    : status == PackageInstaller.STATUS_FAILURE_ABORTED ? "cancelled"
+                    : status == PackageInstaller.STATUS_FAILURE_CONFLICT ? "conflict"
+                    : status == PackageInstaller.STATUS_FAILURE_STORAGE ? "storage" : "failed";
+            JarvisPlugin.emitUpdateResult(kind, msg == null ? "" : msg);
         }
     }
 }

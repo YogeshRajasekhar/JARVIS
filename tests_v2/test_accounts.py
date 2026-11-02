@@ -205,3 +205,11 @@ def test_kokoro_voice_when_installed():
         pytest.skip("Kokoro model files not downloaded")
     wav = speak("Hello there.", "jarvis", md)
     assert wav[:4] == b"RIFF" and len(wav) > 20000
+
+
+def test_background_launch_falls_back_to_a_notification(brain):
+    """From outside the app Android blocks opening apps; the phone posts a notification and JARVIS says so."""
+    real = brain.svc.device.call
+    brain.svc.device.call = lambda cmd, args=None: {"ok": True, "app": "WhatsApp", "needs_tap": True} if cmd == "open_app" else real(cmd, args)
+    r = brain.handle("open whatsapp")
+    assert "notifications" in r.reply and "background" in r.reply

@@ -175,10 +175,21 @@
         <p id="prov-msg" class="sub" role="status"></p>
         <p class="sub">The key is sent once over your private connection, checked with a real request, and stored encrypted on your server. It never comes back to the phone.</p>
       </form>
+      <h3>Phone control</h3>
+      <div class="prov-form">
+        <p id="bg-info" class="sub">Checking...</p>
+        <button id="bg-allow" type="button" class="ghost hidden">Allow opening apps from the background</button>
+      </div>
       <h3>App updates</h3>
       <div class="prov-form">
         <p id="upd-info" class="sub">Checking...</p>
-        <button id="upd-install" type="button" class="primary hidden">Install update</button>
+        <button id="upd-install" type="button" class="primary hidden">Download and install</button>
+        <button id="upd-cached" type="button" class="primary hidden">Install downloaded update</button>
+        <div id="upd-blocked" class="prov-form hidden">
+          <p class="sub" id="upd-blocked-text"></p>
+          <button id="upd-pp" type="button" class="ghost">Open Play Protect</button>
+          <button id="upd-ab" type="button" class="ghost">Open Auto Blocker (Samsung)</button>
+        </div>
         <button id="upd-check" type="button" class="ghost">Check for updates</button>
         <a id="upd-download" class="ghost dl hidden" href="#">Download the Android app</a>
         <p id="upd-msg" class="sub" role="status"></p>

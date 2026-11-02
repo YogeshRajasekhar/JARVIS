@@ -100,9 +100,20 @@ public class JarvisPlugin extends Plugin {
     private BroadcastReceiver wakeReceiver;
 
     public static boolean isAppVisible() { return appVisible; }
+    private static volatile JarvisPlugin instance;
+
+    /** UpdateReceiver reports the installer's outcome through here so the app can explain it. */
+    static void emitUpdateResult(String status, String message) {
+        JarvisPlugin p = instance;
+        if (p == null) return;
+        JSObject o = new JSObject(); o.put("status", status); o.put("message", message);
+        p.notifyListeners("updateResult", o, true);
+    }
 
     @Override
     public void load() {
+        instance = this;
+        clearInstalledUpdate();
         wakeReceiver = new BroadcastReceiver() {
             @Override public void onReceive(Context c, Intent i) { notifyListeners("wake", new JSObject(), true); }
         };
@@ -521,13 +532,20 @@ public class JarvisPlugin extends Plugin {
             return;
         }
         final String url = call.getString("url"), token = call.getString("token"), sha = call.getString("sha256", "");
-        if (url == null || !url.startsWith("https://") && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost")) {
+        final boolean onlyCached = Boolean.TRUE.equals(call.getBoolean("cachedOnly", false));
+        if (!onlyCached && (url == null || !url.startsWith("https://") && !url.startsWith("http://127.0.0.1") && !url.startsWith("http://localhost"))) {
             call.reject("Updates must come from your server over https");
             return;
         }
         new Thread(() -> {
             try {
-                File apk = download(url, token, sha);
+                // Reuse a verified download: if Play Protect or Auto Blocker stopped the install, tapping
+                // Install again must not fetch the file again.
+                File apk = cachedUpdate(sha);
+                if (apk == null) {
+                    if (onlyCached) { JSObject o = new JSObject(); o.put("ok", false); o.put("error", "no_download"); call.resolve(o); return; }
+                    apk = download(url, token, sha);
+                }
                 String problem = verify(apk);
                 if (problem != null) {
                     JSObject o = new JSObject();
@@ -552,7 +570,7 @@ public class JarvisPlugin extends Plugin {
         con.setConnectTimeout(20000);
         con.setReadTimeout(120000);
         if (con.getResponseCode() != 200) throw new Exception("server answered HTTP " + con.getResponseCode());
-        File out = new File(getContext().getCacheDir(), "jarvis-update.apk");
+        File out = updateFile();
         MessageDigest md = MessageDigest.getInstance("SHA-256");
         long total = 0, len = con.getContentLengthLong(), lastNotify = 0;
         try (InputStream in = con.getInputStream(); OutputStream os = new FileOutputStream(out)) {
@@ -579,6 +597,75 @@ public class JarvisPlugin extends Plugin {
             throw new Exception("checksum mismatch; the download was damaged or tampered with");
         }
         return out;
+    }
+
+    private File updateFile() { return new File(getContext().getFilesDir(), "jarvis-update.apk"); }
+
+    /** The already-downloaded update, if it is intact (matches `sha`, or any when sha is empty) and still newer. */
+    private File cachedUpdate(String sha) {
+        File f = updateFile();
+        if (!f.exists() || f.length() == 0) return null;
+        try {
+            if (sha != null && !sha.isEmpty()) {
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                try (InputStream in = new FileInputStream(f)) {
+                    byte[] buf = new byte[1 << 16]; int n;
+                    while ((n = in.read(buf)) > 0) md.update(buf, 0, n);
+                }
+                StringBuilder hex = new StringBuilder();
+                for (byte b : md.digest()) hex.append(String.format("%02x", b));
+                if (!hex.toString().equalsIgnoreCase(sha)) return null;
+            }
+            return verify(f) == null ? f : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** After the update installed (the app restarted as the new version), drop the old file. */
+    private void clearInstalledUpdate() {
+        File f = updateFile();
+        if (!f.exists()) return;
+        try { if (verify(f) != null) f.delete(); } catch (Exception e) { f.delete(); }
+    }
+
+    /** Whether a verified update is waiting to be installed (so the app can offer "Install" instead of "Download"). */
+    @PluginMethod
+    public void downloadedUpdate(PluginCall call) {
+        JSObject o = new JSObject();
+        File f = updateFile();
+        boolean ready = false;
+        long code = 0;
+        try {
+            if (f.exists() && verify(f) == null) {
+                ready = true;
+                PackageInfo pi = getContext().getPackageManager().getPackageArchiveInfo(f.getAbsolutePath(), 0);
+                if (pi != null) code = Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+            }
+        } catch (Exception ignored) { }
+        o.put("ready", ready);
+        o.put("code", code);
+        call.resolve(o);
+    }
+
+    /** Opens the screen where the user can let the install through (Play Protect or Samsung Auto Blocker). */
+    @PluginMethod
+    public void openInstallBlockerSettings(PluginCall call) {
+        String which = call.getString("which", "playprotect");
+        Intent[] tries = "autoblocker".equals(which) ? new Intent[]{
+                new Intent().setClassName("com.samsung.android.sm.devicesecurity", "com.samsung.android.sm.autoblocker.ui.AutoBlockerMainActivity"),
+                new Intent("com.samsung.android.settings.AUTO_BLOCKER"),
+                new Intent(Settings.ACTION_SECURITY_SETTINGS)
+        } : new Intent[]{
+                new Intent().setClassName("com.google.android.gms", "com.google.android.gms.security.settings.VerifyAppsSettingsActivity"),
+                new Intent().setClassName("com.android.vending", "com.google.android.finsky.activities.MainActivity"),
+                new Intent(Settings.ACTION_SECURITY_SETTINGS)
+        };
+        for (Intent i : tries) {
+            try { i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK); getContext().startActivity(i); call.resolve(); return; }
+            catch (Exception ignored) { }
+        }
+        call.reject("Couldn't open the settings screen");
     }
 
     @SuppressWarnings("deprecation")
@@ -731,7 +818,11 @@ public class JarvisPlugin extends Plugin {
             return;
         }
         try {
-            call.resolve(run(cmd, args));
+            launchDeferred = false;
+            launchLabel = labelFor(cmd, args);
+            JSObject out = run(cmd, args);
+            if (launchDeferred) out.put("needs_tap", true);
+            call.resolve(out);
         } catch (Exception e) {
             call.resolve(err(e.getMessage() == null ? e.toString() : e.getMessage()));
         }
@@ -748,12 +839,66 @@ public class JarvisPlugin extends Plugin {
         device(call);
     }
 
+    private static String labelFor(String cmd, JSObject a) {
+        switch (cmd) {
+            case "open_app": return "Open " + a.optString("app", "the app");
+            case "call": return "Call " + a.optString("name", a.optString("number", ""));
+            case "send_sms": return "Text " + a.optString("name", a.optString("number", ""));
+            case "set_alarm": return "Set your alarm";
+            case "set_timer": return "Start your timer";
+            default: return "Finish what you asked JARVIS";
+        }
+    }
+
     private static JSObject ok() { JSObject o = new JSObject(); o.put("ok", true); return o; }
     private static JSObject err(String m) { JSObject o = new JSObject(); o.put("ok", false); o.put("error", m); return o; }
 
+    // Android 10+ silently ignores activity starts from apps in the background. JARVIS can open apps from
+    // the background only with "Display over other apps" (an exemption Android grants to that permission).
+    // Without it, the action becomes a notification you tap, which Android always allows.
+    private volatile boolean launchDeferred = false;
+    private volatile String launchLabel = "Tap to continue";
+
+    private boolean canLaunchFromBackground() {
+        return appVisible || Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(getContext());
+    }
+
     private void startActivity(Intent i) {
         i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-        getContext().startActivity(i);
+        if (canLaunchFromBackground()) { getContext().startActivity(i); return; }
+        launchDeferred = true;
+        Context c = getContext();
+        NotificationManager nm = c.getSystemService(NotificationManager.class);
+        if (Build.VERSION.SDK_INT >= 26) {
+            nm.createNotificationChannel(new android.app.NotificationChannel("jarvis_actions", "Actions from JARVIS",
+                    NotificationManager.IMPORTANCE_HIGH));
+        }
+        PendingIntent pi = PendingIntent.getActivity(c, (int) (System.currentTimeMillis() % 100000), i,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        nm.notify(72, new androidx.core.app.NotificationCompat.Builder(c, "jarvis_actions")
+                .setSmallIcon(android.R.drawable.ic_menu_send)
+                .setContentTitle(launchLabel)
+                .setContentText("Tap to open. Allow \"Open apps from the background\" in JARVIS settings to skip this.")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setAutoCancel(true)
+                .setTimeoutAfter(120_000)
+                .setContentIntent(pi)
+                .build());
+    }
+
+    @PluginMethod
+    public void backgroundLaunch(PluginCall call) {
+        JSObject o = new JSObject();
+        o.put("allowed", Build.VERSION.SDK_INT < 29 || Settings.canDrawOverlays(getContext()));
+        call.resolve(o);
+    }
+
+    @PluginMethod
+    public void requestBackgroundLaunch(PluginCall call) {
+        Intent i = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getContext().getPackageName()));
+        i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try { getContext().startActivity(i); call.resolve(); }
+        catch (Exception e) { call.reject("Couldn't open the setting"); }
     }
 
     private JSObject run(String cmd, JSObject a) throws Exception {

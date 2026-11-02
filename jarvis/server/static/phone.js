@@ -19,6 +19,7 @@ const secret = {
   async del() { if (Native?.secureSet) return Native.secureSet({ key: "jarvis_token", value: null }); store.del("jarvis_token"); },
 };
 let ws = null, wsReady = false, retry = 0;
+let cachedReady = false;   // a verified app update is already downloaded on the phone
 // conversation / call state (see "conversation mode and calls")
 let followUp = false, speakingNow = false;
 let convoOn = store.get("jarvis_convo") !== "0";
@@ -1094,25 +1095,72 @@ function renderUpdate(err) {
   else if (updateIsNewer()) info.textContent = `${mine} Update 2.${a.code} is ready (${Math.round(a.size / 1e6)} MB).`;
   else if (a) info.textContent = `${mine} You're up to date.`;
   else info.textContent = `${mine} No update prepared yet.`;
-  $("upd-install").classList.toggle("hidden", !updateIsNewer());
+  $("upd-install").classList.toggle("hidden", !updateIsNewer() || cachedReady);
   $("upd-download").classList.toggle("hidden", IN_APP || !a);
   const e = err || updateInfo?.last_error;
   $("upd-msg").textContent = e ? `Server: ${e}` : "";
 }
-async function installUpdate() {
-  const a = updateInfo?.available; if (!a) return;
-  $("upd-msg").textContent = "Downloading from your server...";
+async function installUpdate(cachedOnly = false) {
+  const a = updateInfo?.available; if (!a && !cachedOnly) return;
+  $("upd-blocked").classList.add("hidden");
+  $("upd-msg").textContent = cachedOnly ? "Installing the update you already downloaded..." : "Downloading from your server...";
   let r;
-  try { r = await Native.installUpdate({ url: SERVER + "/api/app/apk", token, sha256: a.sha256, code: a.code }); }
+  try { r = await Native.installUpdate({ url: SERVER + "/api/app/apk", token, sha256: a?.sha256 || "", code: a?.code, cachedOnly }); }
   catch (e) { $("upd-msg").textContent = String(e?.message || e); return; }
   const why = {
-    allow_installs: "Allow JARVIS to install updates in the screen that just opened (one time), then tap Install update again.",
+    allow_installs: "Allow JARVIS to install updates in the screen that just opened (one time), then tap Install again.",
     different_signer: "This app was installed from an older test build, so Android won't accept the update over it. One last time: uninstall JARVIS, then open your server address in Chrome, Settings > Download the Android app, and install it. From then on, updates are one tap here.",
     not_newer: "You already have this version.", invalid_apk: "The download isn't a valid app.", wrong_package: "That file isn't JARVIS.",
+    no_download: "Nothing downloaded yet. Tap Download and install.",
   };
-  $("upd-msg").textContent = r?.ok ? "Android will now ask you to confirm the update. Tap Update." : (why[r?.error] || `Update failed: ${r?.error}`);
+  $("upd-msg").textContent = r?.ok ? "Android will now ask you to confirm. Tap Update (or Install)." : (why[r?.error] || `Update failed: ${r?.error}`);
+  refreshCached();
 }
-$("upd-install").onclick = installUpdate;
+// The verified download stays on the phone until it installs: if Play Protect or Auto Blocker stops it,
+// "Install downloaded update" retries without downloading again.
+async function refreshCached() {
+  if (!Native?.downloadedUpdate) return;
+  const d = await Native.downloadedUpdate().catch(() => null);
+  cachedReady = !!d?.ready;
+  $("upd-install").classList.toggle("hidden", !updateIsNewer() || cachedReady);
+  const b = $("upd-cached");
+  b.classList.toggle("hidden", !d?.ready);
+  if (d?.ready) b.textContent = `Install downloaded update${d.code ? ` (2.${d.code})` : ""}`;
+}
+$("upd-install").onclick = () => installUpdate(false);
+$("upd-cached").onclick = () => installUpdate(true);
+$("upd-pp").onclick = () => Native?.openInstallBlockerSettings?.({ which: "playprotect" }).catch(() => {});
+$("upd-ab").onclick = () => Native?.openInstallBlockerSettings?.({ which: "autoblocker" }).catch(() => {});
+if (Native?.addListener) Native.addListener("updateResult", (e) => {
+  const st = e?.status;
+  if (st === "waiting") return;
+  if (st === "installed") { $("upd-msg").textContent = "Updated. JARVIS restarts as the new version."; return; }
+  refreshCached();
+  if (st === "blocked") {
+    $("upd-blocked-text").textContent = "Android's protection stopped the install. The update is already downloaded, so nothing needs downloading again. "
+      + "If you're on Samsung, turn off Auto Blocker for a moment. If Play Protect warned you, open it and allow the app (or tap \"Install anyway\" on its warning). "
+      + "Then tap Install downloaded update.";
+    $("upd-blocked").classList.remove("hidden");
+    $("upd-msg").textContent = "";
+  } else if (st === "cancelled") {
+    $("upd-msg").textContent = "The install was cancelled. Tap Install downloaded update to try again; nothing is downloaded twice.";
+  } else {
+    $("upd-msg").textContent = `The install didn't finish${e?.message ? `: ${e.message}` : ""}. Tap Install downloaded update to retry.`;
+  }
+});
+
+// ------------------------------------------------------------------ opening apps while JARVIS is in the background
+async function refreshBackgroundLaunch() {
+  if (!Native?.backgroundLaunch) { $("bg-info").textContent = "Available in the Android app."; return; }
+  const r = await Native.backgroundLaunch().catch(() => null);
+  const ok = !!r?.allowed;
+  $("bg-info").textContent = ok
+    ? "JARVIS can open apps, the dialer and alarms even when you talk to it from outside the app."
+    : "Android blocks apps from opening other apps from the background. Right now, when you ask from outside JARVIS, you get a notification to tap instead. Allow \"Display over other apps\" for JARVIS to open them directly.";
+  $("bg-allow").classList.toggle("hidden", ok);
+}
+$("bg-allow").onclick = () => Native?.requestBackgroundLaunch?.().catch(() => {});
+document.addEventListener("visibilitychange", () => { if (!document.hidden && !$("security").classList.contains("hidden")) { refreshBackgroundLaunch(); refreshCached(); } });
 $("upd-check").onclick = async () => { $("upd-msg").textContent = "Checking GitHub and preparing the update on your server..."; await refreshUpdate(true); };
 $("upd-download").onclick = async (e) => {             // browser only: one-time install of the server-signed app
   e.preventDefault();
@@ -1130,7 +1178,7 @@ function offerUpdateBanner() {
   const li = el("li", "banner");
   li.append(el("span", "", `JARVIS 2.${updateInfo.available.code} is ready.`));
   const b = el("button", "primary", "Update");
-  b.onclick = () => { document.querySelector('#tabs button[data-view=security]').click(); installUpdate(); };
+  b.onclick = () => { document.querySelector('#tabs button[data-view=security]').click(); installUpdate(false); };
   li.append(b);
   $("log").append(li);
 }
@@ -1230,6 +1278,8 @@ async function loadSecurity() {
   renderVoiceChoice();
   loadModels();
   loadAccounts();
+  refreshBackgroundLaunch();
+  refreshCached();
   refreshUpdate();
   loadPersonal();
   const p = await api("/api/permissions"); const a = await api("/api/audit");

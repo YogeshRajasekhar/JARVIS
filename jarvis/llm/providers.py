@@ -300,6 +300,8 @@ class OpenAICompatibleLLM:
             self.model, self.name = self._preferred, f"{self.family}:{self._preferred}"
         switched = False
         waited = False
+        hops = 0                      # models tried after rate limits (at most 2 extra)
+        last = ""
         for _ in range(8):
             body = self._body(prompt, system, history, json, temperature, max_tokens)
             try:
@@ -312,6 +314,7 @@ class OpenAICompatibleLLM:
                 self.resolve()           # model retired or not allowed for this key: pick another
                 continue
             if r.status_code == 400 and self._adapt(r.text, body):
+                last = f"HTTP 400 {r.text[:160]}"
                 continue
             if _no_credit(r.status_code, r.text):
                 raise LLMNoCredit(f"{self.name}: no credit on this account")
@@ -324,7 +327,9 @@ class OpenAICompatibleLLM:
                     continue
                 # Otherwise this model is out for now; the same key's other models have their own limits.
                 self._limited[self.model] = time.monotonic() + min(wait, 6 * 3600)
-                if self._switch_after_limit():
+                last = f"HTTP 429 {r.text[:160]}"
+                if hops < 2 and self._switch_after_limit():
+                    hops += 1
                     continue
                 kind = "daily" if daily else "per-minute"
                 raise LLMRateLimited(f"{self.name}: rate limited ({kind} limit, resets in {_fmt_wait(wait)})",
@@ -342,7 +347,7 @@ class OpenAICompatibleLLM:
                 # An empty answer is a failure, not a result: let the fallback chain try the next provider.
                 raise LLMUnavailable(f"{self.name}: empty reply (finish_reason={choice.get('finish_reason')})")
             return content
-        raise LLMUnavailable(f"{self.name}: request kept failing")
+        raise LLMUnavailable(f"{self.name}: request kept failing ({last or 'no detail'})")
 
 
 class GeminiLLM:

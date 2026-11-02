@@ -1028,7 +1028,7 @@ $("prov-form").onsubmit = async (e) => {
   if (!r.ok) { modelsMsg(r.error); return; }
   $("prov-key").value = "";                       // never keep the key on the phone
   const m = r.data.result?.models || {};
-  modelsMsg(`Works. Now first in line. Quick tasks: ${m.fast}. Conversation: ${m.smart}.`, true);
+  modelsMsg(m.note ? `Added and first in line. ${m.note}` : `Works. Now first in line. Quick tasks: ${m.fast}. Conversation: ${m.smart}.`, true);
   renderModels(r.data);
 };
 async function patchProvider(id, body) {

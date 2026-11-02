@@ -305,3 +305,41 @@ def test_daily_limit_is_reported_plainly():
     with pytest.raises(LLMRateLimited) as e:
         llm.complete("hi")
     assert "daily" in str(e.value) and "2h 3m" in str(e.value)
+
+
+def test_no_credit_is_not_called_a_rate_limit():
+    """New OpenAI API accounts without credit answer 429 insufficient_quota: say that, don't say 'try in a minute'."""
+    import httpx
+    import pytest
+    from jarvis.llm.providers import LLMNoCredit, OpenAICompatibleLLM
+
+    def h(req):
+        return httpx.Response(429, json={"error": {"message": "You exceeded your current quota, please check your plan and billing details.",
+                                                   "type": "insufficient_quota", "code": "insufficient_quota"}})
+
+    llm = OpenAICompatibleLLM("openai", "https://api.openai.com/v1", "k", "gpt-x", family="openai", transport=httpx.MockTransport(h))
+    with pytest.raises(LLMNoCredit):
+        llm.complete("hi")
+
+
+def test_adding_keys_explains_billing_and_keeps_rate_limited_keys(tmp_path, monkeypatch):
+    from conftest import offline_settings
+    from jarvis.core.storage import Database
+    from jarvis.llm.providers import LLMNoCredit, LLMRateLimited
+    from jarvis.llm.registry import LLMRegistry, RegistryError
+
+    class Boom:
+        model = "m"
+        def __init__(self, exc): self.exc = exc
+        def complete(self, *a, **k): raise self.exc
+
+    reg = LLMRegistry(offline_settings(), Database(":memory:"))
+    monkeypatch.setattr(LLMRegistry, "client", lambda self, e, tier, key=None: Boom(LLMNoCredit("openai:x: no credit")))
+    with pytest.raises(RegistryError) as e:
+        reg.add("openai", "sk-" + "a" * 40)
+    assert "no credit" in str(e.value) and "billing" in str(e.value)
+    monkeypatch.setattr(LLMRegistry, "client", lambda self, e, tier, key=None: Boom(
+        LLMRateLimited("groq:q: rate limited (per-minute limit, resets in 40s)", 40)))
+    out = reg.add("groq", "gsk_" + "a" * 40)
+    assert "rate limiting" in out["models"]["note"] and "40s" in out["models"]["note"]
+    assert any(x["id"] == out["id"] for x in reg.entries())

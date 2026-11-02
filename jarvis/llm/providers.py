@@ -113,6 +113,19 @@ class LLMUnavailable(LLMError):
     """Network error, 5xx, auth error, missing key. Try the next provider."""
 
 
+class LLMNoCredit(LLMUnavailable):
+    """The key is valid but the account has no credit/quota (OpenAI 'insufficient_quota', Anthropic low balance).
+    Looks like a rate limit (often HTTP 429) but waiting won't fix it."""
+
+
+_NO_CREDIT_RX = re.compile(r"insufficient_quota|exceeded your current quota|credit balance is too low|"
+                           r"insufficient (?:credits|balance)|requires more credits|payment required|billing", re.I)
+
+
+def _no_credit(status: int, text: str) -> bool:
+    return status in (400, 402, 403, 429) and bool(_NO_CREDIT_RX.search(text or ""))
+
+
 @runtime_checkable
 class LLM(Protocol):
     name: str
@@ -300,6 +313,8 @@ class OpenAICompatibleLLM:
                 continue
             if r.status_code == 400 and self._adapt(r.text, body):
                 continue
+            if _no_credit(r.status_code, r.text):
+                raise LLMNoCredit(f"{self.name}: no credit on this account")
             if r.status_code == 429:
                 wait, daily = _rate_limit_wait(r)
                 # A per-minute limit that resets in a moment: wait briefly and retry the same model.
@@ -414,7 +429,10 @@ class GeminiLLM:
                 self.resolve()
                 continue
             if r.status_code == 429:
-                raise LLMRateLimited(f"{self.name}: rate limited", retry_after=60)
+                wait, daily = _rate_limit_wait(r)
+                kind = "daily" if daily or "PerDay" in r.text else "per-minute"
+                raise LLMRateLimited(f"{self.name}: rate limited ({kind} limit, resets in {_fmt_wait(wait)})",
+                                     retry_after=min(wait, 300))
             if r.status_code >= 400:
                 raise LLMUnavailable(f"{self.name}: HTTP {r.status_code} {r.text[:200]}")
             try:
@@ -476,6 +494,8 @@ class AnthropicLLM:
                 self._tried.add(self.model)
                 self.resolve()
                 continue
+            if _no_credit(r.status_code, r.text):
+                raise LLMNoCredit(f"{self.name}: no credit on this account")
             if r.status_code in (429, 529):
                 raise LLMRateLimited(f"{self.name}: rate limited", retry_after=float(r.headers.get("retry-after", "30") or 30))
             if r.status_code in (401, 403):
@@ -554,7 +574,7 @@ class FallbackLLM:
                 self.last_errors[p.name] = str(e)[:200]
                 log.warning("LLM %s rate limited, falling back", p.name)
             except LLMUnavailable as e:
-                self._cooldown_until[p.name] = time.monotonic() + 20
+                self._cooldown_until[p.name] = time.monotonic() + (3600 if isinstance(e, LLMNoCredit) else 20)
                 errors.append(str(e))
                 self.last_errors[p.name] = str(e)[:200]
                 log.warning("LLM %s unavailable: %s", p.name, e)

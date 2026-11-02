@@ -20,7 +20,7 @@ import time
 from typing import Optional
 from urllib.parse import urlparse
 
-from jarvis.llm.providers import (AnthropicLLM, GeminiLLM, LLMUnavailable, OpenAICompatibleLLM, _NOT_CHAT,
+from jarvis.llm.providers import (AnthropicLLM, GeminiLLM, LLMNoCredit, LLMRateLimited, LLMUnavailable, OpenAICompatibleLLM, _NOT_CHAT,
                                   pick_model, PREFS)
 
 log = logging.getLogger("jarvis.llm.registry")
@@ -179,23 +179,45 @@ class LLMRegistry:
         svc.smart_llm.replace(self.chain("smart"))
 
     # ------------------------------------------------------------------ testing
+    BILLING = {
+        "openai": "OpenAI's API is pay-as-you-go and separate from a ChatGPT subscription. Add a payment method and a "
+                  "few dollars of credit at platform.openai.com/settings/organization/billing, wait a minute, then try again.",
+        "anthropic": "Add credit at console.anthropic.com/settings/billing, then try again.",
+        "openrouter": "Add credit at openrouter.ai/settings/credits, or pick a model ending in :free.",
+        "deepseek": "Top up at platform.deepseek.com, then try again.",
+        "mistral": "Activate a plan at console.mistral.ai, then try again.",
+        "together": "Add credit at api.together.ai/settings/billing, then try again.",
+    }
+
     def test(self, e: dict, key: Optional[str] = None) -> dict:
-        """Live check of both tiers. Returns the models actually used; raises RegistryError with a clear reason."""
+        """
+        Live check of both tiers. Returns the models used; raises RegistryError with a clear reason.
+        A key that is only rate limited is valid: it is accepted with a note (JARVIS uses it once the limit resets).
+        """
+        label = CATALOG[e["type"]]["label"]
         used = {}
         for tier in ("fast", "smart"):
             c = self.client(e, tier, key)
             try:
                 out = c.complete("Reply with the single word OK.", max_tokens=20)
+            except LLMNoCredit:
+                raise RegistryError(f"{label} accepted the key, but the account has no credit, so it can't answer yet. "
+                                    + self.BILLING.get(e["type"], "Check the account's billing page, then try again."))
+            except LLMRateLimited as ex:
+                m = re.search(r"\((.+?)\)", str(ex))
+                used[tier] = c.model or "auto"
+                used["note"] = (f"The key works, but {label} is rate limiting it right now"
+                                + (f" ({m.group(1)})" if m else "")
+                                + ". It's saved; JARVIS starts using it as soon as the limit resets.")
+                continue
             except LLMUnavailable as ex:
                 msg = str(ex)
                 if "key rejected" in msg or "401" in msg or "403" in msg:
-                    raise RegistryError(f"{CATALOG[e['type']]['label']} rejected the key. Check you copied all of it.")
+                    raise RegistryError(f"{label} rejected the key. Check you copied all of it.")
                 if "can't list models" in msg:
-                    raise RegistryError(f"Couldn't read the model list from {CATALOG[e['type']]['label']}: {msg[-120:]}")
-                raise RegistryError(f"{CATALOG[e['type']]['label']} didn't answer: {msg[-160:]}")
+                    raise RegistryError(f"Couldn't read the model list from {label}: {msg[-120:]}")
+                raise RegistryError(f"{label} didn't answer: {msg[-160:]}")
             except Exception as ex:
-                if "rate limited" in str(ex):
-                    raise RegistryError("The key works but is rate-limited right now. Try again in a minute.")
                 raise RegistryError(f"Test failed: {str(ex)[-160:]}")
             if not out.strip():
                 raise RegistryError("The model answered with nothing. Pick a different model.")

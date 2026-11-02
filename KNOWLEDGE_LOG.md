@@ -1338,3 +1338,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-02
 
 **Word of the day:** *sheltering* (verb) — To provide cover from damage or harassment; to shield; to protect.
+
+## 2026-11-02
+
+**Advice of the day:** The higher up you are in a company, the more likely it is that your boss is a psychopath.

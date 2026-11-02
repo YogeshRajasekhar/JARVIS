@@ -81,9 +81,11 @@ class AppUpdater:
             return path, pw
         if not shutil.which("keytool"):
             raise UpdateError("Java (keytool) isn't installed on the server; rebuild the server image.")
-        pw = secrets.token_urlsafe(24)
         if os.path.exists(path):
-            os.remove(path)
+            # Never replace an existing signing key: every installed app would then refuse updates.
+            raise UpdateError("The server's signing key can't be unlocked (its password is missing or the data key "
+                              "changed). Restore the original JARVIS_DATA_KEY in deploy/.env and restart.")
+        pw = secrets.token_urlsafe(24)
         subprocess.run(["keytool", "-genkeypair", "-keystore", path, "-storetype", "PKCS12", "-alias", ALIAS,
                         "-keyalg", "EC", "-groupname", "secp256r1", "-validity", "10000",
                         "-storepass", pw, "-keypass", pw, "-dname", "CN=JARVIS personal app"],

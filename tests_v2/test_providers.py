@@ -244,3 +244,64 @@ def test_thinking_tags_are_removed():
     from jarvis.llm.providers import strip_thinking
     assert strip_thinking("<think>\nlet me see</think>\n{\"a\": 1}") == '{"a": 1}'
     assert strip_thinking("plain answer") == "plain answer"
+
+
+def test_groq_rate_limit_moves_to_another_model_then_back():
+    """Groq limits each model separately: a 429 on Qwen should continue on another model with the same key."""
+    import httpx
+    from jarvis.llm.providers import OpenAICompatibleLLM
+    state = {"limited": True}
+    used = []
+
+    def h(req):
+        if req.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "qwen/qwen3-32b"}, {"id": "llama-3.1-8b-instant"}]})
+        import json as j
+        model = j.loads(req.content)["model"]
+        used.append(model)
+        if model == "qwen/qwen3-32b" and state["limited"]:
+            return httpx.Response(429, json={"error": {"message": "Rate limit reached for model `qwen/qwen3-32b` on tokens "
+                                                       "per minute (TPM): Limit 6000. Please try again in 1m12.5s."}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": f"ok from {model}"}}]})
+
+    llm = OpenAICompatibleLLM("groq", "https://api.groq.com/openai/v1", "k", "auto", family="groq", tier="fast",
+                              transport=httpx.MockTransport(h))
+    assert llm.complete("hi") == "ok from llama-3.1-8b-instant"
+    assert used == ["qwen/qwen3-32b", "llama-3.1-8b-instant"]
+    assert llm.complete("hi again") == "ok from llama-3.1-8b-instant"       # Qwen still limited: don't retry it
+    llm._limited["qwen/qwen3-32b"] = 0                                     # limit reset
+    state["limited"] = False
+    assert llm.complete("and now") == "ok from qwen/qwen3-32b"             # back to the preferred model
+
+
+def test_short_rate_limit_waits_and_retries_same_model():
+    import httpx
+    from jarvis.llm.providers import OpenAICompatibleLLM
+    calls = {"n": 0}
+
+    def h(req):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(429, json={"error": {"message": "Please try again in 1.2s."}})
+        return httpx.Response(200, json={"choices": [{"message": {"content": "fine"}}]})
+
+    llm = OpenAICompatibleLLM("groq", "https://x/v1", "k", "llama-3.1-8b-instant", family="groq", transport=httpx.MockTransport(h))
+    slept = []
+    llm.sleep = slept.append
+    assert llm.complete("hi") == "fine" and slept and slept[0] < 2
+
+
+def test_daily_limit_is_reported_plainly():
+    import httpx
+    import pytest
+    from jarvis.llm.providers import LLMRateLimited, OpenAICompatibleLLM
+
+    def h(req):
+        if req.url.path.endswith("/models"):
+            return httpx.Response(200, json={"data": [{"id": "llama-3.1-8b-instant"}]})
+        return httpx.Response(429, json={"error": {"message": "Rate limit reached on requests per day (RPD). Please try again in 2h3m"}})
+
+    llm = OpenAICompatibleLLM("groq", "https://x/v1", "k", "llama-3.1-8b-instant", family="groq", transport=httpx.MockTransport(h))
+    with pytest.raises(LLMRateLimited) as e:
+        llm.complete("hi")
+    assert "daily" in str(e.value) and "2h 3m" in str(e.value)

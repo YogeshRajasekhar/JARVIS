@@ -131,6 +131,48 @@ def _messages(system: Optional[str], prompt: str, history: Optional[list[dict]])
     return msgs
 
 
+_WAIT_RX = re.compile(r"try again in\s+(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)s)?", re.I)
+_DUR_RX = re.compile(r"^(?:(\d+)h)?(?:(\d+)m)?(?:([\d.]+)(ms|s))?$")
+
+
+def _dur(text: str) -> Optional[float]:
+    m = _DUR_RX.match((text or "").strip())
+    if not m or not any(m.groups()):
+        return None
+    h, mi, v, unit = m.groups()
+    sec = float(v or 0) / (1000 if unit == "ms" else 1)
+    return int(h or 0) * 3600 + int(mi or 0) * 60 + sec
+
+
+def _rate_limit_wait(r) -> tuple[float, bool]:
+    """Seconds until the limit resets, and whether it's a daily limit. Reads Groq's message and headers."""
+    body = r.text or ""
+    daily = bool(re.search(r"per day|\(RPD\)|\(TPD\)|daily", body, re.I))
+    m = _WAIT_RX.search(body)
+    if m and any(m.groups()):
+        h, mi, sec = m.groups()
+        return int(h or 0) * 3600 + int(mi or 0) * 60 + float(sec or 0), daily
+    try:
+        ra = float(r.headers.get("retry-after", ""))
+        return ra, daily
+    except ValueError:
+        pass
+    for h in ("x-ratelimit-reset-tokens", "x-ratelimit-reset-requests"):
+        d = _dur(r.headers.get(h, ""))
+        if d is not None:
+            return d, daily
+    return 30.0, daily
+
+
+def _fmt_wait(sec: float) -> str:
+    sec = int(round(sec))
+    if sec < 60:
+        return f"{sec}s"
+    if sec < 3600:
+        return f"{sec // 60}m"
+    return f"{sec // 3600}h {sec % 3600 // 60}m"
+
+
 class OpenAICompatibleLLM:
     """Groq, OpenRouter and Ollama all speak the OpenAI chat-completions dialect."""
 
@@ -153,12 +195,40 @@ class OpenAICompatibleLLM:
         self._temperature_ok = True
         self._max_key = "max_tokens"
         self._tried: set = set()
+        # Free tiers (Groq) limit EACH MODEL separately, so when one model is rate limited the same key can
+        # usually keep going on another model. model -> monotonic time its limit resets.
+        self._limited: dict[str, float] = {}
+        self._preferred: Optional[str] = self.model
+        self._models_cache: tuple[float, list[str]] = (0.0, [])
+        self.sleep = time.sleep            # tests replace this
 
     def list_models(self) -> list[str]:
+        at, cached = self._models_cache
+        if cached and time.monotonic() - at < 3600:
+            return cached
         r = self._client.get(self._base + "/models")
         if r.status_code >= 400:
             raise LLMUnavailable(f"{self.family}: can't list models (HTTP {r.status_code}) {r.text[:120]}")
-        return [m["id"] for m in r.json().get("data", []) if m.get("id")]
+        ids = [m["id"] for m in r.json().get("data", []) if m.get("id")]
+        self._models_cache = (time.monotonic(), ids)
+        return ids
+
+    def _limited_now(self) -> set:
+        now = time.monotonic()
+        return {m for m, until in self._limited.items() if until > now}
+
+    def _switch_after_limit(self) -> bool:
+        """Move to the next-best model that isn't rate limited. True if there is one."""
+        prefs = PREFS.get(self.family, {}).get(self.tier, [])
+        try:
+            alt = pick_model(self.list_models(), prefs, avoid=self._tried | self._limited_now())
+        except LLMUnavailable:
+            return False
+        if not alt or alt == self.model:
+            return False
+        log.warning("%s: %s is rate limited, using %s for now", self.family, self.model, alt)
+        self.model, self.name = alt, f"{self.family}:{alt}"
+        return True
 
     def resolve(self) -> str:
         prefs = PREFS.get(self.family, {}).get(self.tier, [])
@@ -168,11 +238,16 @@ class OpenAICompatibleLLM:
         if self.model and self.model != chosen:
             log.warning("%s: model %s unavailable, switching to %s", self.family, self.model, chosen)
         self.model, self.name = chosen, f"{self.family}:{chosen}"
+        if self._preferred is None or self._preferred in self._tried:
+            self._preferred = chosen
         return chosen
 
     def _body(self, prompt, system, history, json, temperature, max_tokens) -> dict:
         body = {"model": self.model, "messages": _messages(system, prompt, history)}
-        budget = max_tokens + 1024 if _is_reasoning(self.model) else max_tokens
+        # Reasoning models think inside the token budget; Qwen3 with thinking off doesn't, and an oversized
+        # max_tokens counts against Groq's tokens-per-minute limit, so only add room when it's needed.
+        thinking = _is_reasoning(self.model) and not ("qwen3" in (self.model or "").lower() and self.family == "groq")
+        budget = max_tokens + (1024 if thinking else 0)
         body[self._max_key] = budget          # reasoning models: thinking counts against the budget
         if self._temperature_ok:
             body["temperature"] = temperature
@@ -206,8 +281,13 @@ class OpenAICompatibleLLM:
                  temperature: float = 0.0, max_tokens: int = 800, history=None, **_ignored) -> str:
         if self.model is None:
             self.resolve()
+        # Go back to the preferred model once its rate limit has reset.
+        if self._preferred and self.model != self._preferred and self._preferred not in self._limited_now() \
+                and self._preferred not in self._tried:
+            self.model, self.name = self._preferred, f"{self.family}:{self._preferred}"
         switched = False
-        for _ in range(6):
+        waited = False
+        for _ in range(8):
             body = self._body(prompt, system, history, json, temperature, max_tokens)
             try:
                 r = self._client.post(self._url, json=body)
@@ -221,8 +301,19 @@ class OpenAICompatibleLLM:
             if r.status_code == 400 and self._adapt(r.text, body):
                 continue
             if r.status_code == 429:
-                retry = float(r.headers.get("retry-after", "30") or 30)
-                raise LLMRateLimited(f"{self.name}: rate limited", retry_after=retry)
+                wait, daily = _rate_limit_wait(r)
+                # A per-minute limit that resets in a moment: wait briefly and retry the same model.
+                if wait <= 3 and not daily and not waited:
+                    waited = True
+                    self.sleep(wait + 0.2)
+                    continue
+                # Otherwise this model is out for now; the same key's other models have their own limits.
+                self._limited[self.model] = time.monotonic() + min(wait, 6 * 3600)
+                if self._switch_after_limit():
+                    continue
+                kind = "daily" if daily else "per-minute"
+                raise LLMRateLimited(f"{self.name}: rate limited ({kind} limit, resets in {_fmt_wait(wait)})",
+                                     retry_after=min(wait, 300))
             if r.status_code in (401, 403):
                 raise LLMUnavailable(f"{self.name}: key rejected (HTTP {r.status_code})")
             if r.status_code >= 400:

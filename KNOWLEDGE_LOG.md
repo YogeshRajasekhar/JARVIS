@@ -1334,3 +1334,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-02
 
 **Fact of the day:** The word "samba" means "to rub navels together."
+
+## 2026-11-02
+
+**Word of the day:** *sheltering* (verb) — To provide cover from damage or harassment; to shield; to protect.

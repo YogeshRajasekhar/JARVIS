@@ -1346,3 +1346,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-03
 
 **Fact of the day:** The angel falls in Venezuela are nearly 20 times taller than Niagara Falls.
+
+## 2026-11-03
+
+**Advice of the day:** Sometimes, you just need to say sorry. Even if it's not your fault.

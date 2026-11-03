@@ -1342,3 +1342,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-02
 
 **Advice of the day:** The higher up you are in a company, the more likely it is that your boss is a psychopath.
+
+## 2026-11-03
+
+**Fact of the day:** The angel falls in Venezuela are nearly 20 times taller than Niagara Falls.

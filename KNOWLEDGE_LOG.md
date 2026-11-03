@@ -1354,3 +1354,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-03
 
 **Advice of the day:** If you don't want something to be public, don't post it on the Internet.
+
+## 2026-11-03
+
+**Advice of the day:** Tell it like it is.

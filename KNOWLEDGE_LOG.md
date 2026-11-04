@@ -1378,3 +1378,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-04
 
 **Advice of the day:** Pedantry is fine, unless you're on the receiving end. And not a pedant.
+
+## 2026-11-04
+
+**Fact of the day:** The scene where Indiana Jones shoots the swordsman in Raider’s of the Lost Ark was Harrison Ford's idea so that he could take a bathroom break.

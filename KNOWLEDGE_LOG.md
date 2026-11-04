@@ -1374,3 +1374,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-04
 
 **Word of the day:** *continuing* (verb) — To proceed with (doing an activity); to prolong (an activity).
+
+## 2026-11-04
+
+**Advice of the day:** Pedantry is fine, unless you're on the receiving end. And not a pedant.

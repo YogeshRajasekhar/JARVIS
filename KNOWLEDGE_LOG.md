@@ -1362,3 +1362,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-03
 
 **Advice of the day:** Lemon and salt works wonders on tarnished brass.
+
+## 2026-11-04
+
+**Fact of the day:** Texas is also the only state that is allowed to fly its state flag at the same height as the U.S. flag.

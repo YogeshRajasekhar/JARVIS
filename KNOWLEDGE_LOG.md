@@ -1394,3 +1394,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-05
 
 **Fact of the day:** The “spot” on the 7-Up logo comes from its inventor who had red eyes. He was an albino.
+
+## 2026-11-05
+
+**Word of the day:** *racewalks* (verb) — To participate in the sport of racewalking.

@@ -1386,3 +1386,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-05
 
 **Word of the day:** *francium* (noun) — The chemical element (symbol Fr) with an atomic number of 87. It is an intensely radioactive alkali metal that is not found in nature.
+
+## 2026-11-05
+
+**Fact of the day:** It has NEVER rained in Calama, a town in the Atacama Desert of Chile.

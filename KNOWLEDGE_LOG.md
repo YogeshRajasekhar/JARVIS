@@ -1418,3 +1418,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-06
 
 **Advice of the day:** Don't waste food.
+
+## 2026-11-06
+
+**Advice of the day:** Do not seek praise, seek criticism.

@@ -1438,3 +1438,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-07
 
 **Advice of the day:** Opinions are like arseholes, everyone has one.
+
+## 2026-11-07
+
+**Advice of the day:** Always get two ciders.

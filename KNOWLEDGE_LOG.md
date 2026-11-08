@@ -1450,3 +1450,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-08
 
 **Advice of the day:** If you are feeling down, try holding a pencil between your top lip and your nose for five minutes.
+
+## 2026-11-08
+
+**Fact of the day:** The Bible, the world's best-selling book, is also the world's most shoplifted book.

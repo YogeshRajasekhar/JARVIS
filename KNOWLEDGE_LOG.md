@@ -1466,3 +1466,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-09
 
 **Advice of the day:** Don't eat anything your grandparents wouldn't recognise as food.
+
+## 2026-11-09
+
+**Word of the day:** *workouts* (noun) — An exercise session; a period of physical exercise.

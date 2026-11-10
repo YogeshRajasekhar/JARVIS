@@ -1482,3 +1482,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-09
 
 **Fact of the day:** Virginia Woolf wrote all her books standing.
+
+## 2026-11-10
+
+**Advice of the day:** Look people in the eye.

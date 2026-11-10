@@ -1490,3 +1490,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-10
 
 **Word of the day:** *religion* (noun) — Belief in a spiritual or metaphysical reality (often including at least one deity), accompanied by practices or rituals pertaining to the belief.
+
+## 2026-11-10
+
+**Advice of the day:** Sometimes it's best to ignore other people's advice.

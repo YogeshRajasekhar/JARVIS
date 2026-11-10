@@ -1498,3 +1498,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-10
 
 **Advice of the day:** Alway do anything for love, but don't do that.
+
+## 2026-11-10
+
+**Fact of the day:** The crack of a whip is actually a tiny sonic boom, since the tip breaks the sound barrier.

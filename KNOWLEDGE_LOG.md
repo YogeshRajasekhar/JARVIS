@@ -1502,3 +1502,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-10
 
 **Fact of the day:** The crack of a whip is actually a tiny sonic boom, since the tip breaks the sound barrier.
+
+## 2026-11-11
+
+**Fact of the day:** William Marston engineered one of the earliest forms of the polygraph in the early 1900`s. Later he went on to create the comic strip Wonder Woman, a story about a displaced Amazon princess who forces anyone caught in her magic lasso to tell the truth

@@ -1518,3 +1518,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-11
 
 **Word of the day:** *presto* (noun) — A pair of fives as a starting hand in Texas hold 'em.
+
+## 2026-11-11
+
+**Fact of the day:** Studies have shown that children laugh an average of 300 times/day and adults 17 times/day, making the average child more optimistic, curious, and creative than the adult.

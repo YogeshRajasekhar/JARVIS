@@ -621,14 +621,15 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
             await asyncio.sleep(30 * 60)
 
     async def update_loop():
-        """Prepare the newest app version in the background (every 6 hours)."""
+        """Prepare the newest app version in the background. A check is one small GitHub API call; the APK is
+        only downloaded and signed when a newer build exists, so new app builds reach the phone within ~20 min."""
         await asyncio.sleep(20)
         while updater:
             try:
                 await asyncio.to_thread(updater.check)
             except Exception as ex:
                 log.warning("update check failed: %s", ex)
-            await asyncio.sleep(6 * 3600)
+            await asyncio.sleep(20 * 60)
 
     @app.on_event("startup")
     async def _start():

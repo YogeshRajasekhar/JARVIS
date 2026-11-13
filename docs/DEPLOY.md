@@ -95,7 +95,7 @@ opens the right screen the first time you ask.
 
 ## App updates (no more reinstalling)
 
-Every push builds a new app version. Your server picks it up within 6 hours (or immediately with
+Every push builds a new app version. Your server picks it up within about 20 minutes (or immediately with
 Settings > App updates > Check for updates), signs it with a key that lives only on your server, and the app
 offers it: tap **Update**, then Android's **Update** confirmation. Your pairing and settings are kept.
 
@@ -112,8 +112,8 @@ reinstalled once more with a new key.
 
 ## Keep the server updated by itself
 
-The app and the server update separately. Run this once on the VM and the server pulls new versions every
-6 hours by itself (only rebuilding when something changed):
+The app and the server update separately. Run this once on the VM and the server checks for new versions every
+15 minutes by itself (only rebuilding when something changed):
 
 ```bash
 cd ~/JARVIS && git pull && sudo deploy/autoupdate.sh install

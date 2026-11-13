@@ -1554,3 +1554,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-13
 
 **Advice of the day:** Lemon and salt works wonders on tarnished brass.
+
+## 2026-11-13
+
+**Advice of the day:** The higher up you are in a company, the more likely it is that your boss is a psychopath.

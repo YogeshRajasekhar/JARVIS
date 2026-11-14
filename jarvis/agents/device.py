@@ -23,6 +23,47 @@ CALL_ME_RX = re.compile(r"^(?:please\s+)?(?:call|ring|phone)\s+me\b(?P<rest>.*)$
 ABOUT_RX = re.compile(r"\b(?P<conn>about|to|for|regarding|and (?:remind|tell) me (?:to|about))\s+(?P<what>.+)$", re.I)
 
 
+_DUR_RX = re.compile(r"(?P<n>\d+(?:\.\d+)?|an?|half an?|one|two|three|four|five|ten|fifteen|twenty|thirty|forty five|sixty|ninety)\s*"
+                     r"(?:and a half\s*)?(?P<u>seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b", re.I)
+_NUM_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "ten": 10, "fifteen": 15, "twenty": 20,
+              "thirty": 30, "forty five": 45, "sixty": 60, "ninety": 90, "half a": .5, "half an": .5}
+
+
+def parse_duration(text: str) -> int | None:
+    """'90 seconds', '1 hour 30 minutes', 'two and a half minutes', 'half an hour' -> seconds."""
+    total = 0.0
+    for m in _DUR_RX.finditer(text or ""):
+        raw = m.group("n").lower()
+        n = _NUM_WORDS.get(raw) if raw in _NUM_WORDS else float(raw)
+        if "and a half" in m.group(0).lower():
+            n += .5
+        u = m.group("u").lower()
+        total += n * (1 if u.startswith("s") else 60 if u.startswith("m") else 3600)
+    return int(round(total)) or None
+
+
+def say_duration(secs: int) -> str:
+    h, rem = divmod(int(secs), 3600)
+    m, s_ = divmod(rem, 60)
+    parts = [f"{h} hour" + ("s" if h != 1 else "")] if h else []
+    if m:
+        parts.append(f"{m} minute" + ("s" if m != 1 else ""))
+    if s_ and not h:
+        parts.append(f"{s_} second" + ("s" if s_ != 1 else ""))
+    return " ".join(parts) or "0 second"
+
+
+# Apps that also live on the web: if the app isn't installed, open the site instead of failing.
+WEB_FALLBACK = {"youtube": "https://www.youtube.com", "gmail": "https://mail.google.com", "maps": "https://maps.google.com",
+                "google maps": "https://maps.google.com", "instagram": "https://www.instagram.com", "twitter": "https://x.com",
+                "x": "https://x.com", "linkedin": "https://www.linkedin.com", "github": "https://github.com", "netflix": "https://www.netflix.com",
+                "spotify": "https://open.spotify.com", "whatsapp": "https://web.whatsapp.com", "reddit": "https://www.reddit.com",
+                "amazon": "https://www.amazon.in", "flipkart": "https://www.flipkart.com", "chatgpt": "https://chatgpt.com",
+                "google": "https://www.google.com", "drive": "https://drive.google.com", "google drive": "https://drive.google.com",
+                "calendar": "https://calendar.google.com", "notion": "https://www.notion.so", "telegram": "https://web.telegram.org",
+                "swiggy": "https://www.swiggy.com", "zomato": "https://www.zomato.com", "uber": "https://m.uber.com", "ola": "https://www.olacabs.com"}
+
+
 class DeviceAgent(BaseAgent):
     name = "device"
 
@@ -52,9 +93,11 @@ class DeviceAgent(BaseAgent):
                             ctx, f"Alarm set for {r.start.strftime('%I:%M %p').lstrip('0')}.")
 
     def _do_set_timer(self, cmd, ctx):
-        minutes = cmd.minutes or 5
-        return self._single("device.set_timer", {"seconds": minutes * 60, "label": cmd.label or "Timer"}, ctx,
-                            f"{minutes} minute timer started.")
+        secs = parse_duration(ctx.original) or (cmd.minutes * 60 if cmd.minutes else None)
+        if not secs:
+            return AgentReply(self.name, "How long should the timer be?", clarify="time")
+        secs = max(5, min(secs, 24 * 3600))
+        return self._single("device.set_timer", {"seconds": secs, "label": cmd.label or "Timer"}, ctx, f"{say_duration(secs)} timer started.")
 
     def _do_set_reminder(self, cmd, ctx):
         r = resolve(cmd.time, ctx.now)
@@ -89,7 +132,19 @@ class DeviceAgent(BaseAgent):
     def _do_open_app(self, cmd, ctx):
         if not cmd.app:
             return AgentReply(self.name, "Which app?", clarify="app")
-        return self._single("device.open_app", {"app": cmd.app}, ctx, f"Opening {cmd.app}.")
+        app = re.sub(r"^(?:the|my) ", "", cmd.app.strip(), flags=re.I)
+        out = self.propose("device.open_app", {"app": app}, ctx)
+        data = out.data if isinstance(out.data, dict) else {}
+        if out.status == "done" and data.get("ok") is False and app.lower() in WEB_FALLBACK:
+            web = self.propose("device.open_url", {"url": WEB_FALLBACK[app.lower()], "label": app, "app": "browser"}, ctx)
+            if web.status == "done" and (web.data or {}).get("ok", True):
+                return AgentReply(self.name, f"{app.capitalize()} isn't installed, so I opened it in the browser.", [out, web])
+        if out.status == "done" and data.get("ok") is False:
+            return AgentReply(self.name, f"I couldn't find an app called {app} on this phone.", [out])
+        if out.status == "done" and data.get("needs_tap"):
+            return AgentReply(self.name, "Android won't let me open that while I'm in the background, so it's waiting in your notifications. "
+                              "Tap it. To skip this next time, allow \"Open apps from the background\" in JARVIS Settings.", [out])
+        return AgentReply(self.name, self.say_outcome(out, f"Opening {data.get('app') or app}."), [out])
 
     def _contact(self, name, ctx):
         c, perm = self.svc.lookup_contact(name, self.name, resume=ctx.original or None, need="phone")
@@ -153,7 +208,17 @@ class DeviceAgent(BaseAgent):
         if not cmd.setting:
             return AgentReply(self.name, "Which setting?", clarify="setting")
         state = True if cmd.state is None else cmd.state
-        return self._single("device.toggle", {"setting": cmd.setting, "state": state}, ctx)
+        rep = self._single("device.toggle", {"setting": cmd.setting, "state": state}, ctx)
+        # "do not disturb for 2 hours": Android has no timed toggle an app can set, so remind the user to switch it back.
+        secs = parse_duration(ctx.original) if re.search(r"\bfor\b", ctx.original or "", re.I) else None
+        if secs and state and rep.outcomes and rep.outcomes[0].status == "done" and (rep.outcomes[0].data or {}).get("ok", True):
+            at = ctx.now + timedelta(seconds=secs)
+            name = {"dnd": "Do Not Disturb", "silent": "silent mode"}.get(cmd.setting, cmd.setting)
+            rem = self.propose("device.set_reminder", {"at_iso": at.isoformat(), "label": f"Turn off {name}"}, ctx)
+            if rem.status == "done":
+                rep.text += f" I can't switch it off by itself, so I'll remind you {fmt_time(at, ctx.now)}."
+                rep.outcomes.append(rem)
+        return rep
 
     def _do_battery(self, cmd, ctx):
         out = self.propose("device.battery", {}, ctx)

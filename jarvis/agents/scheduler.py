@@ -22,6 +22,8 @@ from jarvis.prompts import CALENDAR
 WORK_START, WORK_END = 9, 19
 PARTS = {"morning": (9, 12), "early morning": (7, 9), "afternoon": (12, 17), "evening": (17, 21), "tonight": (18, 22), "night": (18, 22)}
 OPTION_RX = re.compile(r"^(?:book |take |go with |pick |use )?(?:the )?(first|second|third|1st|2nd|3rd|option [123]|[123])(?: one| option| slot)?[.!]?$", re.I)
+NEXT_RX = re.compile(r"\b(?:next|upcoming) (?:meeting|event|call|appointment|class|thing)\b|\bhow (?:long|much time) (?:until|till|before|do i have)\b.*\b(?:meeting|event|call|class)\b|"
+                     r"^what(?:'s| is) next(?: on my (?:calendar|schedule))?[?.! ]*$|\bwhat do i have next\b", re.I)
 _ORD = {"first": 0, "1st": 0, "1": 0, "option 1": 0, "second": 1, "2nd": 1, "2": 1, "option 2": 1, "third": 2, "3rd": 2, "3": 2, "option 3": 2}
 
 
@@ -91,8 +93,27 @@ class SchedulerAgent(BaseAgent):
         m = OPTION_RX.match(text.strip())
         if m and ctx.focus.get("slot_options"):
             return self._book_option(_ORD[m.group(1).lower()], ctx)
+        if NEXT_RX.search(text) and not re.search(r"\b(move|cancel|reschedule|postpone|push|schedule|book|email|mail|tell)\b", text, re.I):
+            return self._next_event(ctx)
         cmd: CalendarOut = self.extract(CalendarOut, CALENDAR, text, ctx, task="calendar")
         return getattr(self, f"_do_{cmd.action}")(cmd, ctx)
+
+    def _next_event(self, ctx: TurnContext) -> AgentReply:
+        """"When is my next meeting" / "how long until my next meeting": the first event that hasn't started."""
+        from jarvis.core.quick import countdown
+        out, events = self._events(ctx.now, ctx.now + timedelta(days=14), ctx)
+        if (b := self.blocked_reply(out)):
+            return b
+        now_on = [e for e in events if datetime.fromisoformat(e["start"]) <= ctx.now < datetime.fromisoformat(e["end"])]
+        nxt = [e for e in events if datetime.fromisoformat(e["start"]) > ctx.now]
+        if not nxt:
+            return AgentReply(self.name, "Nothing else on your calendar for the next two weeks.", [out])
+        e = nxt[0]
+        s = datetime.fromisoformat(e["start"])
+        lead = f"You're in {now_on[0]['title']} right now. " if now_on else ""
+        where = f" at {e['location']}" if e.get("location") else ""
+        return AgentReply(self.name, f"{lead}Your next one is {e['title']} {fmt_time(s, ctx.now)}{where}, {countdown(s, ctx.now)}.", [out],
+                          cards=[{"type": "events", "events": nxt[:3]}], focus={"last_event": e["id"]})
 
     # ------------------------------------------------------------------ actions
     def _do_list(self, cmd: CalendarOut, ctx: TurnContext) -> AgentReply:

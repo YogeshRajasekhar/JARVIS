@@ -8,6 +8,7 @@ scripted LLM, fixed clock) without touching agent code.
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Callable, Optional
@@ -48,6 +49,10 @@ class Services:
     integration_modes: dict = field(default_factory=dict)
     llm_registry: object = None
     accounts: object = None
+    web: object = None
+    lists: object = None
+    expenses: object = None
+    routines: object = None
 
     def now(self) -> datetime:
         return self.clock() if self.clock else datetime.now(ZoneInfo(self.settings.timezone))
@@ -119,6 +124,11 @@ def _target_for_people(svc: "Services", people: list[str]) -> TargetSensitivity:
     if all(svc.is_known_person(p) for p in people):
         return TargetSensitivity.KNOWN_CONTACT
     return TargetSensitivity.EXTERNAL_UNKNOWN
+
+
+def _quote(text: str) -> str:
+    import urllib.parse
+    return urllib.parse.quote(text[:1500])
 
 
 def register_tools(svc: Services) -> None:
@@ -244,6 +254,49 @@ def register_tools(svc: Services) -> None:
     ex.register(Tool(
         "device.battery", run=lambda a: svc.device.call("battery", {}), describe=lambda a: "Check battery"))
 
+    ex.register(Tool(
+        "device.open_url", scopes=("apps.launch",), severity=ActionSeverity.DRAFT,
+        run=lambda a: svc.device.call("open_url", {"url": a["url"], "label": a.get("label", "")}),
+        describe=lambda a: f"Open {a.get('label') or a['url']}",
+        precheck=lambda a: ("I only open https links." if not str(a.get("url", "")).startswith("https://") else
+                            "I don't open payment, banking or password sites." if is_blocked_app(a.get("url")) else None)))
+    ex.register(Tool(
+        "whatsapp.compose", scopes=("apps.launch",), severity=ActionSeverity.WRITE, always_confirm=True,
+        run=lambda a: {**svc.device.call("open_url", {"url": f"https://wa.me/{a['number']}?text={_quote(a['text'])}",
+                                                      "label": f"WhatsApp message to {a.get('name') or a['number']}"}),
+                       "message": f"WhatsApp is open with your message to {a.get('name') or a['number']}. Tap send."},
+        describe=lambda a: f"WhatsApp to {a.get('name') or ''} (+{a['number']}):\n\n{a['text']}",
+        target=lambda a: TargetSensitivity.KNOWN_CONTACT, editable=("text",),
+        summary=lambda a: f"a WhatsApp message to {a.get('name') or a['number']}"))
+    ex.register(Tool(
+        "device.media", scopes=("media.control",),
+        run=lambda a: svc.device.call("media", {"control": a["control"]}), describe=lambda a: f"Media: {a['control']}"))
+    ex.register(Tool(
+        "device.volume", scopes=("media.control",),
+        run=lambda a: svc.device.call("volume", {"control": a["control"], "level": a.get("level")}),
+        describe=lambda a: f"Volume {a['control']}"))
+
+    # ---------------------------------------------------------------- web (read-only; results are untrusted text)
+    ex.register(Tool("web.weather", scopes=("web",),
+                     run=lambda a: svc.web.weather(a.get("place"), a.get("lat"), a.get("lon")), describe=lambda a: "Check the weather"))
+    ex.register(Tool("web.news", scopes=("web",),
+                     run=lambda a: {"items": svc.web.news(a.get("topic"))}, describe=lambda a: "Read the news"))
+    ex.register(Tool("web.lookup", scopes=("web",),
+                     run=lambda a: {"page": svc.web.lookup(a["query"])}, describe=lambda a: f"Look up {a['query']}"))
+    ex.register(Tool("web.search", scopes=("web",),
+                     run=lambda a: {"results": svc.web.search(a["query"])}, describe=lambda a: f"Search the web for {a['query']}"))
+    ex.register(Tool("web.rate", scopes=("web",),
+                     run=lambda a: {"rate": svc.web.rate(a["src"], a["dst"])}, describe=lambda a: f"Get the {a['src']}/{a['dst']} rate"))
+
+    # ---------------------------------------------------------------- lists (internal; clearing asks first)
+    ex.register(Tool(
+        "lists.clear", severity=ActionSeverity.IRREVERSIBLE, reversible=False, always_confirm=True,
+        run=lambda a: {"removed": svc.lists.clear(a["list"], a.get("only_done", False)),
+                       "message": f"Cleared {a['count']} item{'s' if a['count'] != 1 else ''}."},
+        describe=lambda a: (f"Delete {a['count']} finished item{'s' if a['count'] != 1 else ''}" if a.get("only_done") else
+                            f"Delete everything ({a['count']} item{'s' if a['count'] != 1 else ''})") + f" on your {a['list']} list",
+        summary=lambda a: f"clearing your {a['list']} list ({a['count']} item{'s' if a['count'] != 1 else ''})"))
+
     # ---------------------------------------------------------------- memory (internal, no OS permission)
     def _mem_write(a):
         g = svc.graph
@@ -366,15 +419,21 @@ def build_services(settings: Optional[Settings] = None, *, db: Optional[Database
 
     places: PlacesProvider = MockPlaces()
     modes["places"] = "mock"
-    if settings.llm_mode != "offline" and (settings.groq_api_key or settings.gemini_api_key):
+    # Live internet services need no key, so they are on whenever the server isn't in offline (test/demo) mode.
+    live = settings.llm_mode != "offline" and os.environ.get("JARVIS_WEB", "live") != "mock"
+    if live:
         from jarvis.integrations.places import OSMPlaces
         places, modes["places"] = OSMPlaces(), "osm"
+    from jarvis.integrations.web import LiveWeb, MockWeb
+    web, modes["web"] = (LiveWeb(), "live") if live else (MockWeb(), "mock")
+    from jarvis.core.stores import ExpenseStore, ListStore, RoutineStore
 
     svc = Services(settings=settings, db=db, graph=KnowledgeGraph(db, settings.user_name),
                    executor=ActionExecutor(db, broker), broker=broker, fast_llm=fast_llm, smart_llm=smart_llm,
                    calendar=calendar, mail=mail, slack=slack, github=github, places=places,
                    device=device or SimulatedDevice(), clock=clock, integration_modes=modes,
-                   llm_registry=registry)
+                   llm_registry=registry, web=web, lists=ListStore(db), expenses=ExpenseStore(db),
+                   routines=RoutineStore(db))
     from jarvis.integrations.accounts import AccountManager
     svc.accounts = AccountManager(svc)
     try:

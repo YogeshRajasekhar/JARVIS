@@ -846,6 +846,7 @@ public class JarvisPlugin extends Plugin {
             case "send_sms": return "Text " + a.optString("name", a.optString("number", ""));
             case "set_alarm": return "Set your alarm";
             case "set_timer": return "Start your timer";
+            case "open_url": { String l = a.optString("label", ""); return l.isEmpty() ? "Open the link" : "Open " + l; }
             default: return "Finish what you asked JARVIS";
         }
     }
@@ -980,6 +981,51 @@ public class JarvisPlugin extends Plugin {
                 return o;
             }
             case "toggle": return toggle(a.getString("setting"), a.getBoolean("state"));
+            case "open_url": {
+                // Links are built by the server from fixed templates (YouTube/Spotify search, Maps directions, wa.me)
+                // or a site the user named. https only, never a payment/banking/password site.
+                String url = a.optString("url", "");
+                Uri u = Uri.parse(url);
+                if (!"https".equals(u.getScheme()) || u.getHost() == null) return err("that link can't be opened");
+                if (BLOCKED_APPS.matcher(u.getHost()).find()) return err("blocked site");
+                Intent view = new Intent(Intent.ACTION_VIEW, u).addCategory(Intent.CATEGORY_BROWSABLE);
+                try { startActivity(view); } catch (Exception e) { return err("no app can open that link"); }
+                JSObject o = ok(); o.put("url", url); return o;
+            }
+            case "media": {
+                AudioManager am = c.getSystemService(AudioManager.class);
+                String ctl = a.optString("control", "play");
+                int key = ctl.equals("pause") ? android.view.KeyEvent.KEYCODE_MEDIA_PAUSE
+                        : ctl.equals("next") ? android.view.KeyEvent.KEYCODE_MEDIA_NEXT
+                        : ctl.equals("previous") ? android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS
+                        : ctl.equals("stop") ? android.view.KeyEvent.KEYCODE_MEDIA_STOP
+                        : android.view.KeyEvent.KEYCODE_MEDIA_PLAY;
+                am.dispatchMediaKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_DOWN, key));
+                am.dispatchMediaKeyEvent(new android.view.KeyEvent(android.view.KeyEvent.ACTION_UP, key));
+                JSObject o = ok(); o.put("control", ctl); return o;
+            }
+            case "volume": {
+                AudioManager am = c.getSystemService(AudioManager.class);
+                int stream = AudioManager.STREAM_MUSIC, max = am.getStreamMaxVolume(stream);
+                String ctl = a.optString("control", "up");
+                int flags = AudioManager.FLAG_SHOW_UI;
+                try {
+                    switch (ctl) {
+                        case "up": am.adjustStreamVolume(stream, AudioManager.ADJUST_RAISE, flags); am.adjustStreamVolume(stream, AudioManager.ADJUST_RAISE, 0); break;
+                        case "down": am.adjustStreamVolume(stream, AudioManager.ADJUST_LOWER, flags); am.adjustStreamVolume(stream, AudioManager.ADJUST_LOWER, 0); break;
+                        case "mute": am.adjustStreamVolume(stream, AudioManager.ADJUST_MUTE, flags); break;
+                        case "unmute": am.adjustStreamVolume(stream, AudioManager.ADJUST_UNMUTE, flags); break;
+                        case "max": am.setStreamVolume(stream, max, flags); break;
+                        case "set": am.setStreamVolume(stream, Math.round(max * Math.max(0, Math.min(100, a.optInt("level", 50))) / 100f), flags); break;
+                        default: return err("unknown volume control");
+                    }
+                } catch (SecurityException e) {
+                    return err("Do Not Disturb is on, so Android won't let me change the volume");
+                }
+                JSObject o = ok();
+                o.put("level", Math.round(100f * am.getStreamVolume(stream) / max));
+                return o;
+            }
             case "battery": {
                 BatteryManager bm = c.getSystemService(BatteryManager.class);
                 JSObject o = ok();

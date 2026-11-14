@@ -60,7 +60,9 @@
           <span class="dot"></span><span>Conversation</span>
         </button>
       </div>
+      <div id="tiles" class="tiles" aria-label="At a glance"></div>
       <ol id="log" class="log" aria-live="polite"></ol>
+      <div id="chips" class="chips" aria-label="Suggestions"></div>
       <form id="composer" class="composer">
         <button type="button" id="mic" class="mic" aria-label="Hold to talk">
           <svg viewBox="0 0 24 24" width="22" height="22"><path d="M12 15a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V22h2v-3.1A7 7 0 0 0 19 12z" fill="currentColor"/></svg>
@@ -240,6 +242,13 @@
           <button id="appr-yes" class="primary"><span class="fill"></span><span id="appr-yes-label">Approve</span></button>
         </div>
       </div>
+    </div>
+
+    <!-- Start-up sequence (decorative; never blocks input) -->
+    <div id="boot" class="boot" aria-hidden="true">
+      <div class="boot-ring"><i></i><i></i><i></i></div>
+      <p class="brand">J.A.R.V.I.S.</p>
+      <ol class="boot-lines mono"><li>CORE ONLINE</li><li>SECURE LINK</li><li>AGENTS READY</li></ol>
     </div>
 
     <!-- Voice call with JARVIS (hands-free conversation) -->

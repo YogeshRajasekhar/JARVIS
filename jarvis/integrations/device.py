@@ -11,7 +11,8 @@ Commands (the full contract, mirrored in server/static/phone.js and the Android 
   call {number, name}                     send_sms {number, name, text}
   find_contact {name}                     get_location {}
   read_notifications {limit}              toggle {setting, state}
-  battery {}
+  battery {}                              open_url {url, label}
+  media {control}                         volume {control, level}
 
 Defence in depth: notifications are filtered on the phone AND again here.
 """
@@ -28,7 +29,7 @@ from jarvis.core.permissions import is_blocked_app
 from jarvis.core.redaction import redact
 
 COMMANDS = {"set_alarm", "set_timer", "set_reminder", "open_app", "call", "send_sms", "find_contact",
-            "get_location", "read_notifications", "toggle", "battery"}
+            "get_location", "read_notifications", "toggle", "battery", "open_url", "media", "volume"}
 
 
 class DeviceError(Exception):
@@ -85,7 +86,10 @@ class SimulatedDevice(DeviceBridge):
             {"app": "Gmail", "title": "Prof. Ravi", "text": "Thesis draft comments", "time": "18:30"},
             {"app": "GPay", "title": "Payment received", "text": "Rs 200 from Kavya", "time": "17:00"},
         ]
-        self.apps = ["Spotify", "WhatsApp", "Gmail", "Maps", "Camera", "Chrome", "Slack", "GitHub", "GPay", "HDFC Bank"]
+        self.apps = ["Spotify", "WhatsApp", "YouTube", "Gmail", "Maps", "Camera", "Chrome", "Slack", "GitHub", "GPay", "HDFC Bank"]
+        self.urls: list[str] = []
+        self.media: list[str] = []
+        self.volume = 40
         self._connected = True
 
     @property
@@ -147,6 +151,35 @@ class SimulatedDevice(DeviceBridge):
 
     def _battery(self, **_):
         return {"ok": True, "level": self.battery_level, "charging": False}
+
+    def _open_url(self, url, label="", **_):
+        if not url.startswith("https://") or is_blocked_app(url):
+            return {"ok": False, "error": "that link can't be opened"}
+        self.urls.append(url)
+        return {"ok": True, "url": url}
+
+    def _media(self, control, **_):
+        if control not in {"play", "pause", "next", "previous", "stop"}:
+            return {"ok": False, "error": f"unknown media control {control}"}
+        self.media.append(control)
+        return {"ok": True, "control": control}
+
+    def _volume(self, control, level=None, **_):
+        if control == "up":
+            self.volume = min(100, self.volume + 10)
+        elif control == "down":
+            self.volume = max(0, self.volume - 10)
+        elif control == "mute":
+            self._before_mute, self.volume = self.volume, 0
+        elif control == "unmute":
+            self.volume = getattr(self, "_before_mute", 40) or 40
+        elif control == "max":
+            self.volume = 100
+        elif control == "set" and level is not None:
+            self.volume = max(0, min(100, int(level)))
+        else:
+            return {"ok": False, "error": "unknown volume control"}
+        return {"ok": True, "level": self.volume}
 
 
 class RemoteDevice(DeviceBridge):

@@ -24,17 +24,26 @@ RULES: dict[str, list[tuple[str, float]]] = {
         (r"\bblock\b.*\b(time|hours?|slot|calendar)\b|\b(focus|gym|study|deep work) (time|block|session)\b", 3),
     ],
     "communication": [
-        (r"\b(e-?mail|mail|inbox|gmail|reply|draft)\b", 3), (r"\bslack\b|#[\w-]+", 3),
+        (r"\b(e-?mail|mail|inbox|gmail|reply)\b", 3), (r"\bslack\b|#[\w-]+", 3), (r"^(please )?(e-?mail|mail|draft|reply)\b", 3),
+        (r"\bdraft (an? |the )?(e-?mail|mail|message|reply|note to)\b", 3), (r"\bdraft\b", 1),
         (r"\b(send|write|message|dm|post)\b", 1), (r"\b(unread|emails)\b", 2),
     ],
     "memory": [
         (r"^remember\b|\bremember that\b|\bnote that\b|\bdon't forget that\b", 4),
         (r"\b(who is|who's|who introduced|what do (i|you) know about|tell me about)\b", 2.5),
-        (r"\b(forget (about|everything))\b", 3), (r"\b(owe|promised|commitment)\b", 2), (r"\bmy (tasks|projects|preferences)\b", 2),
+        (r"\b(forget (about|everything))\b", 3), (r"\b(owe|promised|commitment)\b", 2), (r"\bmy (projects|preferences)\b", 2),
         (r"\b(my|our) (sister|brother|mom|mother|dad|father|wife|husband|partner|girlfriend|boyfriend|friend|boss|manager|"
          r"advisor|guide|professor|roommate|cousin|uncle|aunt|son|daughter|colleague|labmate|team)\b", 2.5),
         (r"\b(do you remember|do you know|what('s| is) my|who('s| is) my|where does my|when is my \w+'s birthday)\b", 2.5),
     ],
+    "lists": [
+        (r"\b(shopping|grocery|to-?do|todo|packing|reading|wish|bucket|task) list\b", 4), (r"\bmy (tasks|to-?dos|notes|lists)\b", 3.5),
+        (r"\b(tasks?|to-?dos?)\b", 1.5),
+    ],
+    "money": [(r"\b(expenses?|spending|budget)\b", 3), (r"\b(spent|spend)\b", 2)],
+    "web": [(r"\b(weather|forecast|news|headlines|exchange rate)\b", 3.5), (r"\b(search|look up|google)\b", 1.5)],
+    "apps": [(r"\b(youtube|spotify|whatsapp)\b", 2.5), (r"\b(volume|louder|quieter)\b", 3), (r"\b(song|music|playlist|video)\b", 1.5)],
+    "routines": [(r"\broutines?\b", 4)],
     "github": [(r"\b(github|repo|repository|pull request|\bpr\b|prs|issue|issues|ci|build|workflow|commit)\b", 3)],
     "places": [
         (r"\b(how (long|far)|travel time|distance|route|directions|commute)\b", 3), (r"\b(where should (we|i) meet|meet(ing)? point|halfway)\b", 3.5),
@@ -85,7 +94,31 @@ def score(text: str) -> dict[str, float]:
     from jarvis.agents.memory import is_statement
     if is_statement(text):
         out["memory"] = out.get("memory", 0) + 4
+    # The newer agents recognise their own phrasings exactly; a hit is the strongest routing signal there is.
+    for agent, w in _parsed(text).items():
+        out[agent] = out.get(agent, 0) + w
+    if re.search(r"\b(next|upcoming) (meeting|event|call|appointment)\b|\b(free|open) slot\b|\bfree time\b|^what(?:'s| is) next\b|\bwhat do i have next\b", t):
+        out["scheduler"] = out.get("scheduler", 0) + 4   # "how long until my next meeting" is calendar, not travel
+    if "apps" in out and re.search(r"^(open|launch|start) (the )?\w+( app)?$", t) and not re.search(r"\.\w{2,}", t):
+        out["device"] = out.get("device", 0) + 3         # "open whatsapp" opens the app itself
     return {k: v for k, v in out.items() if v > 0}
+
+
+def _parsed(text: str) -> dict[str, float]:
+    from jarvis.agents.life import parse_lists, parse_money, parse_routine
+    from jarvis.agents.web import parse_apps, parse_web
+    out: dict[str, float] = {}
+    if (c := parse_lists(text)):
+        out["lists"] = 2.5 if c.get("weak") else 6
+    if parse_money(text):
+        out["money"] = 6
+    if (c := parse_routine(text)):
+        out["routines"] = 12 if c["action"] == "create" else 6      # "when I say X, do A and B" names other agents' verbs
+    if (c := parse_apps(text)):
+        out["apps"] = 6
+    if (c := parse_web(text)):
+        out["web"] = 3 if c["action"] == "lookup" else 6
+    return out
 
 
 def fast_route(text: str) -> tuple[str | None, float]:

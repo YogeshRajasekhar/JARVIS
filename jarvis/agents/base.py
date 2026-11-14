@@ -31,6 +31,7 @@ class AgentReply:
     focus: dict = field(default_factory=dict)             # updates to merge into focus
     clarify: Optional[str] = None                         # set when the agent needs one more answer
     fact: Optional[str] = None                            # short factual result for later steps in the same turn
+    handoff: Optional[str] = None                         # "I can't answer this, agent X can": the brain re-dispatches once
 
     @property
     def requests(self) -> list[dict]:

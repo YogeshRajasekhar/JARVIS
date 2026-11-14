@@ -47,6 +47,8 @@ SCOPES: dict[str, Scope] = {s.name: s for s in [
     Scope("settings.toggle", "change Wi-Fi, Bluetooth, flashlight and Do Not Disturb", "Quick settings only.", "medium"),
     Scope("phone.call", "start phone calls", "The dialer opens; you confirm the call.", "medium"),
     Scope("sms.send", "send SMS as you", "Every SMS is shown to you for approval first.", "high"),
+    Scope("web", "look things up on the internet", "For weather, news and facts. Only your search words are sent, never your personal data.", "low"),
+    Scope("media.control", "change the volume and control music", "Volume, play, pause and skip.", "low"),
 ]}
 
 # Never grantable. Requests for these are refused and audited.

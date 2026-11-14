@@ -13,11 +13,11 @@ from typing import Literal, Optional
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 AGENTS = (
-    "scheduler", "memory", "planner", "communication", "device",
+    "scheduler", "memory", "planner", "communication", "device", "apps", "lists", "money", "web", "routines",
     "github", "places", "briefing", "chat",
 )
 AgentName = Literal[
-    "scheduler", "memory", "planner", "communication", "device",
+    "scheduler", "memory", "planner", "communication", "device", "apps", "lists", "money", "web", "routines",
     "github", "places", "briefing", "chat",
 ]
 

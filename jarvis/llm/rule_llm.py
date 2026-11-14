@@ -256,7 +256,9 @@ class RuleLLM:
                 out["action"] = "draft_email"
                 out["to"] = names[:3]
             m = re.search(r"\b(?:that|saying|to say|about|:)\s+(.+)$", t, re.I)
-            out["intent"] = (m.group(1) if m else t).strip()
+            bare = re.sub(rf"^(?i:please\s+)?(?i:send|write|draft|mail|email|message|ping|dm|tell)\s+(?i:an?\s+)?(?i:e-?mail|mail|message|note)?\s*(?i:to\s+)?"
+                          rf"(?:(?:{NAME_RX}|(?i:and)|,|\s)+)?", "", t).strip(" .")
+            out["intent"] = m.group(1).strip() if m else (t.strip() if len(bare.split()) >= 2 else None)
             m2 = re.search(r"\b(?:the|my)\s+([\w ]{3,30}?)(?:\s+link| for|$)", t, re.I)
             out["subject"] = (m.group(1)[:40].capitalize() if m else (m2.group(1).capitalize() if m2 else None))
             return out
@@ -296,6 +298,28 @@ class RuleLLM:
             subject = subj.group(1) if subj and subj.group(1) != "None" else (text[:40].capitalize() or "Quick note")
             return {"subject": subject, "body": body}
         return {"subject": None, "body": sentence}
+
+    # ------------------------------------------------------------------ newer agents
+    # Lists, money, routines, web and apps parse common phrasings themselves before asking a model, so by the
+    # time a request reaches this stand-in it is an unusual phrasing: answer "unknown" and let the agent explain.
+    def _t_lists(self, prompt, system):
+        return {"action": "unknown", "list": None, "items": [], "due": None}
+
+    def _t_money(self, prompt, system):
+        return {"action": "unknown", "amount": None, "note": None, "period": None, "category": None, "when": None}
+
+    def _t_routine(self, prompt, system):
+        return {"action": "unknown", "name": None, "steps": []}
+
+    def _t_web(self, prompt, system):
+        text = _request(prompt)
+        return {"action": "lookup", "query": text, "place": None, "day": None, "amount": None, "src": None, "dst": None}
+
+    def _t_apps(self, prompt, system):
+        return {"action": "unknown", "query": None, "app": None, "contact": None, "message": None, "control": None, "level": None}
+
+    def _t_web_answer(self, prompt, system):
+        return ""          # the web agent reads out the source's first sentences itself
 
     # ------------------------------------------------------------------ follow-up rewriting (offline)
     def _t_rewrite(self, prompt, system):
@@ -347,12 +371,12 @@ class RuleLLM:
                "message": None, "setting": None, "state": None}
         if re.search(r"\btimer\b", low):
             m = re.search(r"(\d+)\s*(min|minute|hour|hr|sec)", low)
-            mins = int(m.group(1)) * (60 if m and m.group(2).startswith("h") else 1) if m else 5
+            mins = (int(m.group(1)) * (60 if m.group(2).startswith("h") else 1) if not m.group(2).startswith("s") else max(1, int(m.group(1)) // 60)) if m else None
             lab = re.search(r"\bfor (?:the )?([a-z ]+)$", low)
             return {**out, "action": "set_timer", "minutes": mins, "label": lab.group(1).strip().capitalize() if lab and not lab.group(1).strip().isdigit() and "minute" not in lab.group(1) else "Timer"}
         if re.search(r"\bremind me\b", low):
             m = re.search(r"remind me (?:to |about )?(.+?)\s+(?:at|on|in|tomorrow|today|tonight|by|next)\b", t, re.I) or re.search(r"remind me (?:to |about )?(.+)$", t, re.I)
-            return {**out, "action": "set_reminder", "time": _when(t) or "in 1 hour", "label": (m.group(1) if m else "Reminder").strip().capitalize()}
+            return {**out, "action": "set_reminder", "time": _when(t), "label": (m.group(1) if m else "Reminder").strip().capitalize()}
         if re.search(r"\b(alarm|wake me)\b", low):
             return {**out, "action": "set_alarm", "time": _when(t), "label": "Wake up" if "wake" in low else "Alarm"}
         for setting, rx in [("wifi", r"wi-?fi"), ("bluetooth", r"bluetooth"), ("flashlight", r"flash ?light|torch"),
@@ -361,7 +385,7 @@ class RuleLLM:
                 state = not re.search(r"\b(off|disable|stop|deactivate)\b", low)
                 return {**out, "action": "toggle", "setting": setting, "state": state}
         if re.search(r"\b(text|sms)\b", low):
-            m = re.search(rf"(?:text|sms|message)\s+({NAME_RX})\s*(?:that |saying |:)?\s*(.*)$", t, re.I)
+            m = re.search(r"(?i:text|sms|message)\s+((?!(?i:that|saying)\b)\S+(?:\s+(?!(?i:that|saying)\b)[A-Z][a-z]+\b(?!'))?)\s*(?i:that |saying |:)?\s*(.*)$", t)
             return {**out, "action": "send_sms", "contact": m.group(1) if m else (_names(t) or [None])[0], "message": (m.group(2) if m else "").strip() or None}
         if re.search(r"\b(call|dial|ring)\b", low):
             m = re.search(rf"(?:call|dial|ring)\s+({NAME_RX}|\+?[\d ]{{7,}})", t, re.I)
@@ -443,6 +467,7 @@ class RuleLLM:
             return "Running smoothly. Thanks for asking."
         if getattr(self, "_cloud_errors", None):
             why = "rate limits" if all("rate limited" in e or "cooling" in e for e in self._cloud_errors) else "an error on the server"
-            return (f"I can't reach my language models right now ({why}), so I can only handle direct commands "
-                    "like scheduling, reminders, mail drafts and phone actions. The server log has details.")
-        return "I'm in offline mode right now, so I can only handle direct commands like scheduling, reminders, mail drafts and phone actions."
+            return (f"I didn't understand that, and I can't reach my language models right now ({why}), so I can only follow "
+                    "direct commands. Say \"help\" to hear what I can do, or try again in a minute.")
+        return ("I didn't understand that, and my language models are offline right now, so I can only follow direct commands. "
+                "Say \"help\" to hear what I can do.")

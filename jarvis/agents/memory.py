@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 
 from jarvis.agents.base import AgentReply, BaseAgent, TurnContext
-from jarvis.core.redaction import contains_sensitive, redact
+from jarvis.core.redaction import contains_sensitive, redact, states_secret
 from jarvis.llm.schemas import MemoryFactOut, MemoryQueryOut
 from jarvis.prompts import MEMORY_ANSWER, MEMORY_FACT, MEMORY_QUERY
 
@@ -48,7 +48,7 @@ class MemoryAgent(BaseAgent):
 
     # ------------------------------------------------------------------ write
     def _remember(self, text: str, ctx: TurnContext) -> AgentReply:
-        if contains_sensitive(text) or re.search(r"\b(password|otp|cvv|upi pin|card number)\b", text, re.I):
+        if states_secret(text) or re.search(r"\b(cvv|upi pin|card number|aadhaar number|pan number)\b", text, re.I):
             return AgentReply(self.name, "I don't store passwords, codes, card or ID numbers. That stays with you.")
         fact: MemoryFactOut = self.extract(MemoryFactOut, MEMORY_FACT, text, ctx, task="memory_fact")
         if any(e.name == "refused" for e in fact.entities):
@@ -113,6 +113,8 @@ class MemoryAgent(BaseAgent):
                 if m["role"] == "user" and m["content"].strip() != text.strip()][:3]
         facts += [f"The user once said: \"{m['content'][:200]}\"" for m in past]
         if not facts:
+            if not re.search(r"\b(my|me|i|our|we|mine)\b", text, re.I) and re.match(r"^(who|what|where|when|which|tell me about|how)\b", text.strip(), re.I):
+                return AgentReply(self.name, "", handoff="web")       # nothing personal about it: look it up
             return AgentReply(self.name, "I don't know that yet. Tell me and I'll remember it.")
         try:
             ans = self.svc.smart_llm.complete(f"Question: {redact(text)}", system=MEMORY_ANSWER.format(facts="\n".join(facts)),
@@ -120,7 +122,7 @@ class MemoryAgent(BaseAgent):
         except Exception:
             ans = ""
         ans = re.sub(r"[*_#`]", "", ans or "").strip()
-        if not ans or ans.startswith("I'm in offline mode") or ans.startswith("I can't reach"):
+        if not ans or ans.startswith(("I'm in offline mode", "I can't reach", "I didn't understand that")):
             ans = facts[0] + "."                    # offline: read out the best matching fact
         return AgentReply(self.name, ans)
 

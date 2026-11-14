@@ -165,7 +165,8 @@ const phone = {
     { app: "Messages", title: "AX-SWIGGY", text: "Your OTP is 482913. Do not share.", time: "19:02" },
     { app: "Gmail", title: "Prof. Ravi", text: "Thesis draft comments", time: "18:30" },
   ],
-  apps: ["Spotify", "WhatsApp", "Gmail", "Maps", "Camera", "Chrome", "Slack", "GitHub"],
+  apps: ["Spotify", "WhatsApp", "YouTube", "Gmail", "Maps", "Camera", "Chrome", "Slack", "GitHub"],
+  urls: [], media: [], volume: 40,
 };
 const BLOCKED_APPS = /g ?pay|phone ?pe|paytm|bhim|bank|hdfc|icici|sbi|axis|kotak|password|authenticator|wallet|aadhaar/i;
 
@@ -204,6 +205,16 @@ async function runDevice(command, args) {
     case "toggle":
       if (!(args.setting in phone.settings)) return { ok: false, error: "unsupported" };
       phone.settings[args.setting] = !!args.state; renderStatus(); return { ok: true, setting: args.setting, state: !!args.state };
+    case "open_url": {
+      if (!/^https:\/\//.test(args.url || "") || BLOCKED_APPS.test(args.url)) return { ok: false, error: "that link can't be opened" };
+      phone.urls.push(args.url); toast(`Opening ${args.label || new URL(args.url).hostname}`); return { ok: true, url: args.url };
+    }
+    case "media": phone.media.push(args.control); toast(`Media: ${args.control}`); return { ok: true, control: args.control };
+    case "volume": {
+      const v = phone.volume;
+      phone.volume = { up: Math.min(100, v + 10), down: Math.max(0, v - 10), mute: 0, unmute: v || 40, max: 100, set: Math.max(0, Math.min(100, args.level ?? 50)) }[args.control] ?? v;
+      toast(`Volume ${phone.volume}%`); return { ok: true, level: phone.volume };
+    }
     case "battery": {
       try { const b = await navigator.getBattery(); phone.battery = Math.round(b.level * 100); return { ok: true, level: phone.battery, charging: b.charging }; }
       catch { return { ok: true, level: phone.battery, charging: false }; }
@@ -676,7 +687,7 @@ function connect() {
   sock.onmessage = async (ev) => {
     if (ws !== sock) return;
     const m = JSON.parse(ev.data);
-    if (m.type === "hello") { wsReady = true; retry = 0; setState("idle"); showRequests(m.pending || []); if (store.get("jarvis_wake") === "1") setWake(true); }
+    if (m.type === "hello") { wsReady = true; retry = 0; setState("idle"); flushOutbox(); refreshTiles(); showRequests(m.pending || []); if (store.get("jarvis_wake") === "1") setWake(true); }
     else if (m.type === "error") unpair("The pairing token was rejected. Pair again.");
     else if (m.type === "reply") onReply(m);
     else if (m.type === "device_command") {
@@ -730,12 +741,34 @@ function send(text, source = "text") {
   else if (!inCall) convoActive = false;
   if (inCall) { $("cap-you").textContent = text; $("cap-jarvis").textContent = ""; }
   setState("thinking");
-  if (!wsSend({ type: "message", text, source })) api("/api/message", { method: "POST", body: { text, source } }).then((r) => r && onReply(r));
+  hideChips();
+  clearTimeout(thinkTimer);
+  thinkTimer = setTimeout(() => {                    // never sit on "Thinking" forever
+    if ($("state").textContent !== STATE_TEXT.thinking) return;
+    setState(wsOpen() ? "idle" : "offline");
+    note("That took too long. Check your connection and try again.");
+    if (inCall) continueConvo();
+  }, 60000);
+  if (wsSend({ type: "message", text, source })) return;
+  api("/api/message", { method: "POST", body: { text, source } }).then((r) => {
+    if (r) { onReply(r); return; }
+    clearTimeout(thinkTimer);
+    setState("offline");
+    if (outbox.length < 5) outbox.push({ text, source });
+    note("No link to your server right now. I'll send that as soon as it's back.");
+  });
+}
+let thinkTimer = null;
+const outbox = [];                                   // messages typed while the link was down
+function flushOutbox() {
+  while (outbox.length && wsOpen()) { const m = outbox.shift(); setState("thinking"); wsSend({ type: "message", ...m }); }
 }
 $("composer").onsubmit = (e) => { e.preventDefault(); const t = $("text").value; $("text").value = ""; send(t); };
 
 function onReply(m) {
+  clearTimeout(thinkTimer);
   setState("idle");
+  refreshTiles();
   if (m.understood) note(`Understood as: ${m.understood}`);
   const agents = [...new Set(m.agents || [])].filter((a) => a !== "router").join(" + ");
   addLine("jarvis", m.reply, agents, m.cards || []);
@@ -748,14 +781,39 @@ function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.
 function addLine(who, text, agent = "", cards = []) {
   const li = el("li", who);
   if (who === "jarvis" && agent) li.append(el("span", "who", agent));
-  li.append(el("span", "", text));
-  for (const c of cards) { const n = renderCard(c); if (n) li.append(n); }
+  const body = el("span", "txt", "");
+  li.append(body);
   $("log").append(li);
+  const done = () => {
+    body.textContent = text;
+    for (const c of cards) { let n = null; try { n = renderCard(c); } catch { /* a malformed card must not hide the reply */ } if (n) li.append(n); }
+    $("log").scrollTop = $("log").scrollHeight;
+  };
+  if (who !== "jarvis" || muted || REDUCE || text.length > 420 || document.hidden) { done(); }
+  else {                                              // quick reveal, at most ~0.5 s
+    const step = Math.max(2, Math.ceil(text.length / 30)); let i = 0;
+    const tick = () => {
+      i += step; body.textContent = text.slice(0, i);
+      $("log").scrollTop = $("log").scrollHeight;
+      if (i < text.length) requestAnimationFrame(tick); else done();
+    };
+    tick();
+  }
+  while ($("log").children.length > 200) $("log").firstElementChild.remove();     // long sessions stay light
   $("log").scrollTop = $("log").scrollHeight;
 }
+const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
 function note(text) { addLine("note", text); }
 const fmtT = (iso) => new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 const fmtD = (iso) => new Date(iso).toLocaleDateString([], { weekday: "short" });
+
+const WX = (s) => /thunder/.test(s) ? "⛈" : /snow/.test(s) ? "❄" : /rain|shower|drizzle/.test(s) ? "🌧" : /fog/.test(s) ? "🌫" : /overcast/.test(s) ? "☁" : /cloud/.test(s) ? "⛅" : "☀";
+// Links from the web open in the real browser; only https, and the server already screened them.
+function openLink(url) {
+  if (!/^https:\/\//.test(url)) return;
+  if (Native?.device) return Native.device({ command: "open_url", args: { url, label: "" } }).catch(() => {});
+  window.open(url, "_blank", "noopener,noreferrer");
+}
 
 function renderCard(c) {
   if (c.type === "events" && c.events.length) {
@@ -785,6 +843,72 @@ function renderCard(c) {
   if (c.type === "notifications") {
     const box = el("div", "card");
     for (const n of c.items) { const r = el("div", "r"); r.append(el("span", "t", n.app)); r.append(el("span", "", `${n.title}: ${n.text}`)); box.append(r); }
+    return box;
+  }
+  if (c.type === "list") {
+    const box = el("div", "card list");
+    box.append(el("div", "card-h", c.title));
+    if (!c.items.length) box.append(el("div", "r dim", "Empty"));
+    for (const it of c.items.slice(0, 12)) {
+      const r = el("button", "r tick" + (it.done ? " done" : ""));
+      r.type = "button"; r.disabled = !!it.done;
+      r.append(el("span", "box", it.done ? "✓" : ""));
+      const d = el("span", "", it.text);
+      if (it.due && !it.done) d.append(el("span", "s", `  due ${new Date(it.due).toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" })}`));
+      r.append(d);
+      r.onclick = () => send(`mark ${it.text} as done on my ${c.list} list`);
+      box.append(r);
+    }
+    if (c.items.length > 12) box.append(el("div", "r dim", `and ${c.items.length - 12} more`));
+    return box;
+  }
+  if (c.type === "money") {
+    const box = el("div", "card money");
+    const h = el("div", "card-h"); h.append(el("span", "", `Spent ${c.label}`), el("b", "", c.total)); box.append(h);
+    if (c.ratio != null) {
+      const bar = el("div", "bar"); const f = el("i"); f.style.width = `${Math.round(c.ratio * 100)}%`; if (c.ratio >= 1) f.className = "over";
+      bar.append(f); box.append(bar); box.append(el("div", "r dim", `Budget ${c.budget}`));
+    }
+    for (const k of c.categories.slice(0, 5)) {
+      const r = el("div", "r cat"); r.append(el("span", "t", k.name));
+      const w = el("span", "meter"); const f = el("i"); f.style.width = `${Math.max(4, Math.round(k.share * 100))}%`; w.append(f);
+      r.append(w, el("span", "amt", k.amount)); box.append(r);
+    }
+    return box;
+  }
+  if (c.type === "weather") {
+    const box = el("div", "card weather");
+    const h = el("div", "card-h"); h.append(el("span", "", c.place), el("b", "", `${c.now.temp}°`)); box.append(h);
+    box.append(el("div", "r dim", `${c.now.summary}, feels ${c.now.feels}°, humidity ${c.now.humidity}%`));
+    const row = el("div", "days");
+    c.days.forEach((d, i) => {
+      const x = el("div", "day");
+      const dt = new Date(Date.now() + i * 864e5);
+      x.append(el("span", "t", i === 0 ? "Today" : dt.toLocaleDateString([], { weekday: "short" })), el("span", "wx", WX(d.summary)),
+               el("span", "", `${d.max}°`), el("span", "s", `${d.min}°`));
+      if ((d.rain_chance ?? 0) >= 30) x.append(el("span", "rain", `${d.rain_chance}%`));
+      row.append(x);
+    });
+    box.append(row);
+    return box;
+  }
+  if (c.type === "links") {
+    const box = el("div", "card links");
+    box.append(el("div", "card-h", c.title));
+    for (const it of c.items.slice(0, 5)) {
+      const r = el(it.url ? "button" : "div", "r link"); if (it.url) { r.type = "button"; r.onclick = () => openLink(it.url); }
+      const d = el("span", "", it.title); if (it.sub) d.append(el("span", "s", `  ${it.sub}`));
+      r.append(d); if (it.url) r.append(el("span", "go", "↗")); box.append(r);
+    }
+    return box;
+  }
+  if (c.type === "routines") {
+    const box = el("div", "card");
+    for (const rt of c.items.slice(0, 6)) {
+      const r = el("button", "r link"); r.type = "button"; r.onclick = () => send(rt.name);
+      const d = el("span", "", `"${rt.name}"`); d.append(el("span", "s", `  ${rt.steps.join(" → ")}`));
+      r.append(d, el("span", "go", "▶")); box.append(r);
+    }
     return box;
   }
   if (c.type === "plan") {
@@ -1258,7 +1382,7 @@ async function onBriefCall() {
 if (Native?.addListener) Native.addListener("brief", () => onBriefCall());
 
 // The app and server are updated separately; say so plainly when the server is behind.
-const NEEDS_API = 4;
+const NEEDS_API = 5;
 let serverBehind = false;
 async function checkServerVersion() {
   let api = 0;
@@ -1323,8 +1447,52 @@ window.addEventListener("unhandledrejection", (e) => reportError(e.reason?.messa
 
 // ------------------------------------------------------------------ boot
 let started = false;
+// ------------------------------------------------------------------ home screen: glance tiles, suggestions, start-up
+async function refreshTiles() {
+  const r = await apiDetail("/api/glance").catch(() => null);
+  const box = $("tiles");
+  if (!r?.ok) { box.replaceChildren(); return; }
+  const frag = document.createDocumentFragment();
+  for (const t of r.data.tiles || []) {
+    const b = el("button", "tile"); b.type = "button"; b.dataset.id = t.id;
+    b.append(el("span", "tl", t.label), el("span", "tv", t.value), el("span", "ts", t.sub || ""));
+    if (t.say) b.onclick = () => send(t.say); else if (t.id === "appr") b.onclick = () => showing || next();
+    else b.disabled = true;
+    frag.append(b);
+  }
+  box.replaceChildren(frag);
+}
+// A few things to try, picked for the time of day. They disappear once you start talking.
+function showChips() {
+  const h = new Date().getHours();
+  const picks = h < 11 ? ["Brief me", "What's the weather today", "What are my tasks", "What can you do"]
+    : h < 17 ? ["What's next", "Any new mail", "Add milk to my shopping list", "What can you do"]
+    : ["How much did I spend today", "What's on tomorrow", "Play some music", "What can you do"];
+  const box = $("chips"); box.replaceChildren();
+  for (const p of picks) { const b = el("button", "chip", p); b.type = "button"; b.onclick = () => send(p); box.append(b); }
+  box.classList.remove("hidden");
+}
+function hideChips() { $("chips").classList.add("hidden"); }
+// Start-up animation: purely decorative, fades by itself, never blocks taps.
+function boot() {
+  const b = $("boot");
+  if (REDUCE || muted) { b.remove(); return; }
+  b.classList.add("run");
+  setTimeout(() => b.classList.add("out"), 1500);
+  setTimeout(() => b.remove(), 2100);
+}
+// When the keyboard is up there is little room: shrink the reactor so the conversation stays visible.
+function fitViewport() {
+  const vv = window.visualViewport;
+  const h = vv ? vv.height : window.innerHeight;
+  $("main").classList.toggle("compact", h < 560);
+}
+window.visualViewport?.addEventListener("resize", fitViewport);
+window.addEventListener("resize", fitViewport);
+
 function start() {
   if (started) { connect(); return; }
+  boot(); showChips(); fitViewport();
   started = true;
   $("pair").classList.add("hidden"); $("main").classList.remove("hidden"); $("tabs").classList.remove("hidden");
   setState("offline"); renderStatus(); renderClock();
@@ -1343,7 +1511,7 @@ function start() {
 if (!IN_APP) $("server-field").classList.add("hidden");
 if (Native?.addListener) Native.addListener("level", (e) => orbAll.level(e.level || 0));
 secret.get().then((t) => { token = t; if (token && SERVER) start(); else $("tabs").classList.add("hidden"); });
-window.__jarvis = { send, phone, setWake, listen, speakOff: () => (muted = true), startCall, endCall, showRing,
+window.__jarvis = { send, phone, setWake, listen, speakOff: () => { muted = true; $("boot")?.remove(); }, startCall, endCall, showRing, refreshTiles,
   state: () => ({ inCall, convoActive, followUp, listening, speakingNow, callMuted }),
   setStt: (mode, available) => { sttMode = mode; serverStt = available; },
   dropConnection: () => ws?.close() }; // used by automated tests

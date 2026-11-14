@@ -44,7 +44,7 @@ from jarvis.services import build_services
 log = logging.getLogger("jarvis.server")
 STATIC = os.path.join(os.path.dirname(__file__), "static")
 
-API_LEVEL = 4   # 4: accounts, server voices, call mode
+API_LEVEL = 5   # 5: lists, money, web, apps, routines, glance tiles
 CSP = ("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
        "font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' ws: wss:; "
        "media-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
@@ -302,6 +302,55 @@ def create_app(settings: Optional[Settings] = None, svc=None, enable_wakeword: b
                 "llm_errors": {**svc.fast_llm.last_errors, **svc.smart_llm.last_errors},
                 "wake_word": wake_factory is not None, "user": settings.user_name,
                 "server_stt": svc.llm_registry.stt() is not None, "server_voice": _has_voice()}
+
+    @app.get("/api/glance", dependencies=[Depends(auth)])
+    async def glance():
+        """The HUD tiles: next event, open tasks, spending. Reads only what is already allowed; never prompts."""
+        from datetime import datetime as _dt, timedelta as _td
+        from jarvis.core.permissions import PermStatus
+        from jarvis.core.quick import countdown
+        from jarvis.core.stores import period
+        now = svc.now()
+        tiles = []
+        if svc.executor.locked_down:
+            return {"tiles": [{"id": "lock", "label": "LOCKDOWN", "value": "On", "sub": "Unlock in Security", "say": None}]}
+
+        def nxt():
+            if svc.broker.check(["calendar.read"]).status != PermStatus.GRANTED:
+                return None
+            if svc.integration_modes.get("calendar") == "mock" and not settings.seed_demo_data:
+                return None
+            evs = [e for e in svc.calendar.list_events(now, now + _td(days=7)) if e.start > now]
+            return evs[0] if evs else False
+        try:
+            e = await asyncio.to_thread(nxt)
+            if e:
+                tiles.append({"id": "next", "label": "NEXT", "value": e.title[:26], "sub": countdown(e.start, now), "say": "when is my next meeting"})
+            elif e is False:
+                tiles.append({"id": "next", "label": "NEXT", "value": "Clear", "sub": "nothing this week", "say": "what's on my calendar this week"})
+        except Exception as ex:                       # a calendar hiccup must not break the home screen
+            log.info("glance calendar: %s", ex)
+        todo = svc.lists.items("todo")
+        overdue = svc.lists.overdue(now)
+        shop = svc.lists.items("shopping")
+        if todo or not shop:
+            tiles.append({"id": "tasks", "label": "TASKS", "value": str(len(todo)), "sub": f"{len(overdue)} overdue" if overdue else ("open" if todo else "all done"),
+                          "say": "what are my tasks"})
+        if shop:
+            tiles.append({"id": "shop", "label": "TO BUY", "value": str(len(shop)), "sub": ", ".join(r["text"] for r in shop[:2])[:24], "say": "what's on my shopping list"})
+        start, end, _ = period("this month", now)
+        spent = svc.expenses.summarise(svc.expenses.between(start, end))
+        if spent["count"]:
+            b = svc.expenses.budget()
+            sym = {"INR": "₹", "USD": "$", "EUR": "€"}.get(svc.expenses.currency, "")
+            tiles.append({"id": "money", "label": "SPENT", "value": f"{sym}{spent['total']:,.0f}",
+                          "sub": (f"{sym}{b - spent['total']:,.0f} left" if b and b >= spent["total"] else "over budget" if b else "this month"),
+                          "say": "how much did I spend this month"})
+        n = len([r for r in svc.db.pending_requests() if r["kind"] == "approval"])
+        if n:
+            tiles.insert(0, {"id": "appr", "label": "WAITING", "value": str(n), "sub": "for your approval", "say": None})
+        del _dt
+        return {"tiles": tiles[:4], "greeting": ("Good morning" if now.hour < 12 else "Good afternoon" if now.hour < 17 else "Good evening")}
 
     # ------------------------------------------------------------------ language-model providers (Settings)
     from jarvis.llm.registry import RegistryError

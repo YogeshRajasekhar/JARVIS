@@ -24,6 +24,11 @@ def _first_sentence(text: str, n: int = 110) -> str:
     return redact(s[:n])
 
 
+_NOT_NAMES = {"what", "did", "has", "have", "from", "the", "any", "mail", "mails", "email", "emails", "last", "latest", "say", "said",
+              "send", "sent", "his", "her", "their", "new", "recent", "about", "message", "messages", "inbox", "today", "yesterday",
+              "anything", "read", "show", "check", "tell", "when", "reply", "replied", "write", "wrote", "this", "that", "week", "me", "my"}
+
+
 class CommunicationAgent(BaseAgent):
     name = "communication"
 
@@ -63,6 +68,20 @@ class CommunicationAgent(BaseAgent):
         if (b := self.blocked_reply(out)):
             return b
         emails = out.data["emails"]
+        who = self._sender_asked(ctx.original)
+        if who:                                   # "what did Arun say in his last email": only Arun's mail
+            first = who.split()[0].lower().strip(".")
+            mine = [e for e in emails if first in (e.sender or "").lower() or first in (e.sender_email or "").lower()]
+            if not mine:
+                return AgentReply(self.name, f"I don't see a recent email from {who}.", [out], focus={"last_person": who})
+            e = mine[0]
+            if injection_score(e.subject + " " + e.body):
+                return AgentReply(self.name, f"The latest email from {who} looks like phishing, so I won't read it out.", [out])
+            body = " ".join(_first_sentence(s_) for s_ in [e.body])
+            more = f" There {'are' if len(mine) > 2 else 'is'} {len(mine) - 1} more from {who.split()[0]}." if len(mine) > 1 else ""
+            return AgentReply(self.name, f"{e.sender}'s latest email, \"{e.subject}\": {redact(body)}{more}", [out],
+                              cards=[{"type": "emails", "emails": [dict(x.to_dict(), suspicious=False, snippet=redact(x.body[:160])) for x in mine[:4]]}],
+                              focus={"last_email": e.id, "last_person": e.sender})
         if not emails:
             return AgentReply(self.name, "Nothing new in your inbox." if cmd.action == "read_inbox" else "No emails match that.", [out])
         safe, flagged = [], []
@@ -77,6 +96,21 @@ class CommunicationAgent(BaseAgent):
         cards = [{"type": "emails", "emails": [dict(e.to_dict(), suspicious=e in flagged, snippet=redact(e.body[:160])) for e in emails]}]
         return AgentReply(self.name, reply.strip(), [out], cards=cards,
                           focus={"last_email": safe[0].id if safe else None, "last_person": safe[0].sender if safe else None})
+
+    def _sender_asked(self, text: str) -> str | None:
+        """The known person whose mail is being asked about, if the question names one."""
+        t = text or ""
+        if not re.search(r"\b(from|did|has|have|by)\b|'s (?:last |latest |recent |new )?(?:e-?mail|mail|message|reply)", t, re.I):
+            return None
+        words = [re.sub(r"'s$", "", w) for w in re.findall(r"[A-Za-z][\w.']+", t)]
+        cands = [f"{a} {b}" for a, b in zip(words, words[1:])] + words          # "Prof. Ravi" before "Ravi"
+        for cand in cands:
+            if any(w.lower().strip(".") in _NOT_NAMES for w in cand.split()) or len(cand) < 3:
+                continue
+            nid = self.svc.graph.resolve(cand, "person")
+            if nid and nid != "self:me":
+                return self.svc.graph.node(nid)["label"]
+        return None
 
     def _read_slack(self, cmd: MessageOut, ctx: TurnContext) -> AgentReply:
         out = self.propose("slack.read", {"channel": cmd.channel, "limit": 5}, ctx)
@@ -117,8 +151,29 @@ class CommunicationAgent(BaseAgent):
                 missing.append(n)
         return people, missing, None
 
+    _TO_SEG = re.compile(r"^(?:please\s+)?(?:send (?:an? )?(?:e-?mail|mail|message|note) to|e-?mail|mail|write to|drop (?:an? )?(?:e-?mail|mail|note) to)\s+"
+                         r"(?P<seg>.+?)(?:\s+(?:that|about|saying|to say|regarding|asking|telling|with|:)\b|\s*$)", re.I)
+
+    def _all_recipients(self, names: list[str], text: str) -> list[str]:
+        """Models sometimes drop a recipient ("mail arun and priya ..." -> only Priya). Add every person the user
+        named in the "to" part of the sentence that JARVIS already knows."""
+        out = list(names)
+        seen = {self.svc.graph.resolve(n, "person") or n.lower() for n in names}
+        m = self._TO_SEG.match((text or "").strip())
+        if not m:
+            return out
+        for part in re.split(r"\s*(?:,|&|\band\b)\s*", m.group("seg")):
+            part = part.strip(" .")
+            if not part or len(part.split()) > 3:
+                continue
+            nid = self.svc.graph.resolve(part, "person")
+            if nid and nid != "self:me" and nid not in seen:
+                seen.add(nid)
+                out.append(self.svc.graph.node(nid)["label"])
+        return out[:6]
+
     def _draft_email(self, cmd: MessageOut, ctx: TurnContext) -> AgentReply:
-        names = cmd.to or ([ctx.focus["last_person"]] if ctx.focus.get("last_person") else [])
+        names = self._all_recipients(cmd.to, ctx.original) or ([ctx.focus["last_person"]] if ctx.focus.get("last_person") else [])
         if not names:
             return AgentReply(self.name, "Who should I send it to?", clarify="recipient")
         people, missing, perm = self._recipients(names, ctx)

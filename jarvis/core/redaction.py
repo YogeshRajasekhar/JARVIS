@@ -24,7 +24,10 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # Indian passport (A1234567) / generic passport mention
     ("PASSPORT", re.compile(r"(?i)\bpassport(?: no\.?| number)?\s*[:#]?\s*([A-Z]\d{7})\b")),
     # UPI PIN / CVV / password statements
-    ("SECRET", re.compile(r"(?i)\b(?:upi pin|atm pin|pin|cvv|cvc|password|passwd|pwd)\b\s*(?:is|=|:)\s*(\S+)")),
+    # ("the wifi password is on the fridge" gives no secret, so words that only say where it is are skipped)
+    ("SECRET", re.compile(r"(?i)\b(?:upi pin|atm pin|pin|cvv|cvc|password|passwd|pwd)\b\s*(?:is|=|:)\s*"
+                          r"(?!(?:on|in|at|under|with|the|written|saved|stored|same|kept|there|here|not|my|what|something|wrong|"
+                          r"required|needed|expired|incorrect|behind|inside|taped|stuck)\b)(\S+)")),
     # IBAN / bank account numbers when labelled
     ("ACCOUNT", re.compile(r"(?i)\b(?:a/c|acct|account)(?: no\.?| number)?\s*[:#]?\s*(\d{9,18})\b")),
     ("IBAN", re.compile(r"\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b")),
@@ -46,6 +49,18 @@ def redact(text: str) -> str:
             return f"[REDACTED:{kind}]"
         out = pat.sub(_sub, out)
     return out
+
+
+_SECRET_VALUE = re.compile(
+    r"\b(?:password|passcode|passphrase|pin|otp|cvv|secret key|api key|token)\b\s*(?:is|was|=|:|-)\s*"
+    r"(?!on\b|in\b|at\b|under\b|with\b|the\b|written\b|saved\b|stored\b|same\b|kept\b|there\b|here\b|not\b|my\b|what\b|"
+    r"something\b|wrong\b|required\b|needed\b|expired\b|incorrect\b|behind\b|inside\b|taped\b|stuck\b)\S{3,}", re.I)
+
+
+def states_secret(text: str) -> bool:
+    """True when the text actually gives a secret's value ("my pin is 4821"), not when it merely mentions one
+    ("the wifi password is on the fridge")."""
+    return bool(_SECRET_VALUE.search(text or "")) or contains_sensitive(text or "")
 
 
 def contains_sensitive(text: str) -> bool:

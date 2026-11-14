@@ -1574,3 +1574,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-14
 
 **Advice of the day:** Do not compare yourself with others.
+
+## 2026-11-14
+
+**Fact of the day:** In Quebec, there is an old law that states margarine must be a different color than butter.

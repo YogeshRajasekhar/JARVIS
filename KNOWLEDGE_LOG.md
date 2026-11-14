@@ -1566,3 +1566,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-14
 
 **Word of the day:** *ectoparasites* (noun) — A parasite that lives on the surface of a host organism; such as the Demodex mite, which lives in human hair and eyelashes.
+
+## 2026-11-14
+
+**Advice of the day:** Never run a marathon in Crocs.

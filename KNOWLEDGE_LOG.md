@@ -1598,3 +1598,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-15
 
 **Advice of the day:** A nod is as good as a wink to a blind horse.
+
+## 2026-11-15
+
+**Advice of the day:** If you get stuck, try doing the opposite of what the solution requires.

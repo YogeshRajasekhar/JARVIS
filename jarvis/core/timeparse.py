@@ -76,6 +76,29 @@ def resolve(phrase: Optional[str], now: datetime, prefer_morning: bool = False) 
     text = re.sub(r"\s+", " ", text).rstrip(".?!")
     if not text:
         return None
+    # "on the 1st" / "the 15th at 5pm" (no month): the next time that day of the month comes round
+    m = re.search(r"\b(?:on )?the (\d{1,2})(?:st|nd|rd|th)\b(?! of)", text)
+    if m and not re.search(r"\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)", text) and 1 <= int(m.group(1)) <= 31:
+        d = int(m.group(1))
+        y, mo = now.year, now.month
+        for _ in range(13):
+            try:
+                cand = now.replace(year=y, month=mo, day=d)
+                if cand.date() >= now.date():
+                    break
+            except ValueError:
+                pass
+            mo += 1
+            if mo > 12:
+                y, mo = y + 1, 1
+        else:
+            return None
+        day0 = cand.replace(hour=0, minute=0, second=0, microsecond=0)
+        rest = re.sub(r"^(?:at|by|around)\s+", "", (text[: m.start()] + " " + text[m.end():]).strip())
+        t = resolve(f"today {rest}", now) if rest else None
+        if t and (t.has_time or t.part_of_day):
+            return Resolved(day0.replace(hour=t.start.hour, minute=t.start.minute), t.has_time, t.part_of_day)
+        return Resolved(day0, False)
 
     m = _IN_DURATION.match(text)
     if m:

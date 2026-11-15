@@ -241,8 +241,41 @@ def countdown(target: datetime, now: datetime) -> str:
     return f"in {days} day{'s' if days != 1 else ''}"
 
 
+_UNTIL_RX = re.compile(r"^how (?:many|long) (?:more )?(?P<u>days|weeks|months)?\s*(?:is it |are there |do i have |left )?(?:until|till|to|before|left until|left till|left to|left for) (?P<w>.+?)[?.! ]*$", re.I)
+_EVENTS = {"christmas": "25 december", "new year": "1 january", "new years": "1 january", "new year's": "1 january",
+           "valentine's day": "14 february", "independence day": "15 august", "republic day": "26 january", "halloween": "31 october"}
+
+
+def days_until(text: str, now: datetime) -> Optional[str]:
+    m = _UNTIL_RX.match(text.strip())
+    if not m:
+        return None
+    from jarvis.core.timeparse import resolve
+    w = re.sub(r"^(?:the |my )", "", m.group("w").strip(), flags=re.I)
+    r = resolve(_EVENTS.get(w.lower(), w), now)
+    if not r:
+        return None
+    target = r.start
+    if target.date() < now.date() and re.search(r"[a-z]", w, re.I) and not re.search(r"\d{4}", w):
+        try:
+            target = target.replace(year=target.year + 1)
+        except ValueError:
+            return None
+    days = (target.date() - now.date()).days
+    if days < 0:
+        return None
+    label = f"{target.day} {target.strftime('%B')}"
+    if days == 0:
+        return f"That's today, {label}."
+    unit = (m.group("u") or "days").lower()
+    if unit == "weeks":
+        wk, d = divmod(days, 7)
+        return f"{wk} week{'s' if wk != 1 else ''}" + (f" and {d} day{'s' if d != 1 else ''}" if d else "") + f" until {label}."
+    return f"{days} day{'s' if days != 1 else ''} until {label}, a {target.strftime('%A')}."
+
+
 def answer(text: str, now: datetime) -> Optional[str]:
-    return time_date(text, now) or convert_units(text) or calculate(text)
+    return time_date(text, now) or days_until(text, now) or convert_units(text) or calculate(text)
 
 
 __all__ = ["answer", "calculate", "convert_units", "time_date", "countdown", "timedelta"]

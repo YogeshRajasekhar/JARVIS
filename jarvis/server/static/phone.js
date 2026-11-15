@@ -800,6 +800,7 @@ function addLine(who, text, agent = "", cards = []) {
     tick();
   }
   while ($("log").children.length > 200) $("log").firstElementChild.remove();     // long sessions stay light
+  $("main").classList.toggle("talking", $("log").querySelectorAll("li.you, li.jarvis").length >= 2);   // give the conversation room
   $("log").scrollTop = $("log").scrollHeight;
 }
 const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;

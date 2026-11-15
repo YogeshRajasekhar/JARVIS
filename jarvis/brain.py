@@ -100,7 +100,36 @@ UNSUPPORTED = [
      "I never make payments or open payment apps. That stays with you."),
     (re.compile(r"\bread (my |the )?(sms|texts?|otp|messages from the bank)\b|\bwhat(?:'s| is) (my|the) otp\b", re.I),
      "I don't read your SMS inbox. It holds OTPs and bank alerts, so it's off limits to me."),
+    (re.compile(r"\bwhat(?:'s| is| are) my [\w ]*\b(password|passcode|pin|cvv)s?\b|\b(tell|show|give) me my [\w ]*\b(password|pin|cvv)\b", re.I),
+     "I never store passwords, PINs or card codes, so I don't have that."),
+    (re.compile(r"^(?:delete|cancel|remove|turn off|switch off|disable|stop)(?: my| the| all| all my)? (?:\d[\d: ]*(?:am|pm)? )?alarms?\b|"
+                r"^(?:what|which|show|list|do i have)\b.*\balarms?\b", re.I),
+     "Alarms live in your Clock app, and Android doesn't let me see or delete them. Say \"open clock\" and I'll take you there."),
+    (re.compile(r"^(?:what|which|show|list|do i have)\b.*\breminders\b|^(?:delete|cancel|remove)(?: my| the| all)? reminders?\b", re.I),
+     "I can set reminders but can't list or cancel them yet. For things to keep track of, try \"add it to my tasks\"."),
 ]
+
+_SHORTHAND = [(r"\b(?:tmrw|tmr|tmw|tomo|tmrow|tommorow|tommorrow|tomorow|2moro|2morrow)\b", "tomorrow"), (r"\b2day\b", "today"),
+              (r"\b(?:tonite|2nite)\b", "tonight"), (r"\b(?:pls|plz)\b", "please"), (r"\bmsg\b", "message"), (r"\bmtg\b", "meeting"),
+              (r"\byday\b", "yesterday"), (r"\bw/\s*", "with "), (r"\b(?:mins)\b", "minutes"), (r"\bhrs\b", "hours"), (r"\bappt\b", "appointment")]
+
+
+def _normalise(text: str) -> str:
+    """Texting shorthand -> words, and speech-to-text stutter ("set a timer set a timer set a timer") -> said once."""
+    for rx, to in _SHORTHAND:
+        text = re.sub(rx, to, text, flags=re.I)
+    words = text.split()
+    n = len(words)
+    for k in (2, 3):
+        if n >= 3 * k and n % k == 0 and n // k >= 3:
+            size = n // k
+            chunks = [" ".join(words[i * size:(i + 1) * size]).lower().strip(".,!?") for i in range(k)]
+            if len(set(chunks)) == 1:
+                return " ".join(words[:size])
+    if len(text) > 12 and text.isupper():            # ALL CAPS is not shouting a different request
+        text = text[0] + text[1:].lower()
+    return text
+
 
 CAPABILITIES = (
     "Here's what I can do. Calendar: show your day, book, move and cancel meetings, find free time. "
@@ -200,6 +229,8 @@ class Brain:
         from jarvis.agents.life import parse_routine
         if parse_routine(s["text"]):                 # "when I say X, do A and B" is ONE request (saving a routine)
             return "route"
+        if re.match(r"^(?:open|launch|start) (?:youtube music|yt music|youtube|yt|spotify) and (?:play|search|find|put on)\b", s["text"], re.I):
+            return "route"                           # "open Spotify and play jazz" is one action
         return "split" if looks_multi_intent(s["text"]) else "route"
 
     @staticmethod
@@ -274,6 +305,11 @@ class Brain:
         agent, conf = fast_route(text)
         if agent in (None, "web") and self._about_known(text):
             agent, conf = "memory", 0.9              # "who is Arun" is about someone you told me about, not the web
+        if agent != "lists":
+            from jarvis.agents.life import parse_lists
+            c = parse_lists(text)
+            if c and c["action"] in ("done", "remove") and any(self.svc.lists.find(None, i) for i in c["items"]):
+                agent, conf = "lists", 0.95          # "I finished review PR 42": that exact item is on a list
         if agent is None:
             try:
                 r: RouteOut = complete_json(self.svc.fast_llm, RouteOut, ROUTER, f"Request: {redact(text)}", task="route")
@@ -417,7 +453,11 @@ class Brain:
         if not rows or time.time() - rows[-1]["ts"] > 15 * 60:
             return None
         convo = "\n".join(f"{m['role']}: {m['content'][:220]}" for m in rows[-4:])
-        last_user = next((m["content"] for m in reversed(rows) if m["role"] == "user"), "")
+        # the request being followed up is the last real one, not a "yes"/"no"/"never mind" in between
+        last_user = next((m["content"] for m in reversed(rows) if m["role"] == "user" and len(m["content"].split()) > 1
+                          and not (YES_RX.match(m["content"]) or NO_RX.match(m["content"]) or CANCEL_RX.match(m["content"]))), "")
+        if not last_user:
+            return None
         f = self.focus
         hints = "".join([f"\nPerson mentioned last: {f['last_person']}" if f.get("last_person") else ""])
         prompt = f"Conversation:\n{convo}{hints}\nPrevious request: {last_user}\nLatest: {text}"
@@ -434,6 +474,7 @@ class Brain:
         text = re.sub(r"\s+", " ", WAKE_RX.sub("", raw)).strip()[:1500]
         if not text or only_wake:
             return TurnResult("Yes?", ["chat"])
+        text = _normalise(text)
         if not re.search(r"[^\W_]", text, re.UNICODE):          # only punctuation or emoji: nothing to act on
             return TurnResult("Sorry, I didn't catch that. What do you need?", ["chat"])
         if self.focus.get("slot_options") and not self.focus.get("pending"):

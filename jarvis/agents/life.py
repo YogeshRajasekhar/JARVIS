@@ -67,6 +67,8 @@ def parse_lists(text: str) -> Optional[dict]:
         or re.match(rf"^(?:my |the ){LIST_NAME} list$", low)
     if m:
         return {"action": "show", "list": m.group("list"), "items": [], "due": None}
+    if re.match(r"^(?:what(?:'s| is| are)|show|read|tell me)(?: me)?(?: on| in)? (?:my|the|that|this) list$", low):
+        return {"action": "show", "list": None, "items": [], "due": None}
     if re.match(r"^(?:what|which) lists do i have|^(?:show|list)(?: me)? (?:all )?my lists$", low):
         return {"action": "show", "list": "*", "items": [], "due": None}
     # ---- clear
@@ -114,6 +116,9 @@ def parse_lists(text: str) -> Optional[dict]:
     if m:
         x, due = _split_due(m.group("x"))
         return {"action": "add", "list": "todo", "items": [x], "due": due}
+    m = re.match(r"^add (?P<x>[\w' ,&-]{2,60})$", t, re.I)
+    if m and not re.search(r"\b(to|on|in|at|for|with|from|event|meeting|alarm|reminder|contact|expense)\b", low) and not re.search(r"\d\s*(?:and|\+|plus)\s*\d", low):
+        return {"action": "add", "list": None, "items": split_items(m.group("x")), "due": None, "weak": True}   # "add eggs"
     return None
 
 
@@ -154,7 +159,7 @@ class ListsAgent(BaseAgent):
     def _add(self, store, lst, items, due_phrase, ctx) -> AgentReply:
         if not items:
             return AgentReply(self.name, f"What should I add to your {list_label(list_key(lst))}?", clarify="content")
-        key = list_key(lst)
+        key = list_key(lst or ctx.focus.get("last_list") or "shopping")
         if any(states_secret(i) for i in items):
             return AgentReply(self.name, "I don't store passwords, codes, card or ID numbers, even in notes.")
         due_iso, due_text = None, ""
@@ -312,7 +317,11 @@ def parse_money(text: str) -> Optional[dict]:
                 c = categorise(on.group(1))
                 cat = c if c != "other" else None
         return {"action": "report", "period": p.group(1) if p else None, "category": cat}
-    m = re.match(rf"^(?:i |we |just )?(?:just )?(?:spent|paid|payed|blew|shelled out|dropped)(?: about| around| nearly)? {AMOUNT}(?: (?:on|for|at|to|in) (?P<note>.+?))?$", t, re.I) \
+    if re.search(r"\b(biggest|largest|highest|top|most expensive)\b.*\b(expense|spend|purchase|spending)\b|\bwhat did i spend (?:the )?most on\b", low):
+        p = PERIOD_RX.search(low)
+        return {"action": "report", "period": p.group(1) if p else None, "category": None, "top": True}
+    m = re.match(rf"^(?:i |we |just )?(?:just )?(?:spent|paid|payed|blew|shelled out|dropped)(?: about| around| nearly)? {AMOUNT}"
+                 r"(?: (?:(?:on|for|at|to|in) )?(?!hours?\b|hrs?\b|minutes?\b|mins?\b|days?\b|weeks?\b|months?\b|years?\b|seconds?\b|times?\b)(?P<note>.+?))?$", t, re.I) \
         or re.match(rf"^(?:add|log|record|note|track)(?: an| a)?(?: expense)?(?: of)? {AMOUNT}(?: (?:on|for|at|to|as) (?P<note>.+?))?$", t, re.I) \
         or re.match(rf"^(?:i )?(?:bought|got|ordered|had|paid for) (?P<note>.+?) (?:for|at|costing|worth) {AMOUNT}$", t, re.I) \
         or re.match(rf"^(?:the |my )?(?P<note>[a-z][a-z ]{{1,30}}?) (?:cost|costs|came to|set me back)(?: me)? {AMOUNT}$", t, re.I) \
@@ -388,6 +397,10 @@ class MoneyAgent(BaseAgent):
         if not rows:
             return AgentReply(self.name, f"No {'%s ' % cat if cat else ''}expenses logged {label}.")
         s = store.summarise(rows)
+        if cmd.get("top"):
+            big = max(rows, key=lambda r: r["amount"])
+            return AgentReply(self.name, f"Your biggest expense {label} was {self._fmt(big['amount'])} for {big['note']}. "
+                                         f"{self._fmt(s['total'])} in total.", cards=[self._card(store, ctx.now, label)])
         if cat:
             text = f"You spent {self._fmt(s['total'])} on {cat} {label}, across {s['count']} expense{'s' if s['count'] != 1 else ''}."
         else:

@@ -23,6 +23,33 @@ CALL_ME_RX = re.compile(r"^(?:please\s+)?(?:call|ring|phone)\s+me\b(?P<rest>.*)$
 ABOUT_RX = re.compile(r"\b(?P<conn>about|to|for|regarding|and (?:remind|tell) me (?:to|about))\s+(?P<what>.+)$", re.I)
 
 
+_WHEN_BIT = (r"(?:(?:at|by|around)\s+\d{1,2}(?::\d{2})?\b(?!\s*(?:am|pm|a\.m|p\.m)))|(?:(?:at|by|around|on|in|this|next|every|each)\s+)?(?:\d{1,2}(?::\d{2})?\s*(?:am|pm|a\.m\.|p\.m\.)|\d{1,2}(?::\d{2})\b|noon|midnight|today|tonight|"
+             r"tomorrow(?:\s+(?:morning|afternoon|evening|night))?|day after tomorrow|this (?:morning|afternoon|evening)|(?:every |each )?(?:day|weekday|"
+             r"morning|evening|night)|daily|(?:on |next |this |every )?(?:monday|tuesday|wednesday|thursday|friday|saturday|sunday)|"
+             r"the \d{1,2}(?:st|nd|rd|th)|\d{1,2}(?:st|nd|rd|th)?\s+(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*|"
+             r"in \d+\s*(?:minutes?|mins?|hours?|hrs?|days?)|in (?:an?|half an?) (?:hour|minute)|(?:at |in the )?(?:morning|afternoon|evening|night))")
+_REMIND_RX = re.compile(r"^(?:please\s+)?(?:can you\s+)?(?:remind me|set (?:a |me a )?reminder|give me a reminder|don'?t let me forget)\s*(?P<body>.*)$", re.I)
+
+
+def reminder_parts(text: str) -> tuple[str | None, str | None]:
+    """'remind me at 6pm to go shopping' / 'remind me to call mom tomorrow at 7' -> ('go shopping', 'at 6pm')."""
+    m = _REMIND_RX.match((text or "").strip().rstrip(".!?"))
+    if not m:
+        return None, None
+    body = m.group("body").strip()
+    whens = [w.group(0).strip() for w in re.finditer(_WHEN_BIT, body, re.I)]
+    label = re.sub(_WHEN_BIT, " ", body, flags=re.I)
+    label = re.sub(r"\s+", " ", label).strip(" ,")
+    label = re.sub(r"^(?:to|that i (?:need|have|should) to|that i|about|for)\s+", "", label, flags=re.I)
+    label = re.sub(r"\s+(?:at|on|by|in|to|and)$", "", label, flags=re.I).strip(" ,")
+    when = " ".join(whens) if whens else None
+    return (label or None), when
+
+
+def _lower1(s: str) -> str:
+    return s if (len(s) > 1 and s[1].isupper()) or s[:2] == "I " else s[0].lower() + s[1:]
+
+
 _DUR_RX = re.compile(r"(?P<n>\d+(?:\.\d+)?|an?|half an?|one|two|three|four|five|ten|fifteen|twenty|thirty|forty five|sixty|ninety)\s*"
                      r"(?:and a half\s*)?(?P<u>seconds?|secs?|s|minutes?|mins?|m|hours?|hrs?|h)\b", re.I)
 _NUM_WORDS = {"a": 1, "an": 1, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "ten": 10, "fifteen": 15, "twenty": 20,
@@ -100,15 +127,22 @@ class DeviceAgent(BaseAgent):
         return self._single("device.set_timer", {"seconds": secs, "label": cmd.label or "Timer"}, ctx, f"{say_duration(secs)} timer started.")
 
     def _do_set_reminder(self, cmd, ctx):
-        r = resolve(cmd.time, ctx.now)
+        label0, when0 = reminder_parts(ctx.original)
+        if label0:
+            cmd.label = label0
+        r = resolve(cmd.time, ctx.now) or (resolve(when0, ctx.now) if when0 else None)
         if not r:
-            return AgentReply(self.name, f"When should I remind you to {cmd.label or 'do that'}?", clarify="time")
+            return AgentReply(self.name, f"When should I remind you to {_lower1(cmd.label) if cmd.label else 'do that'}?", clarify="time")
         at = r.start if r.has_time else r.start.replace(hour=9)
         if at <= ctx.now:
             at = at + timedelta(days=1)
         label = (cmd.label or "Reminder").rstrip(".")
-        return self._single("device.set_reminder", {"at_iso": at.isoformat(), "label": label}, ctx,
-                            f"I'll remind you to {label[0].lower() + label[1:]} {fmt_time(at, ctx.now)}.")
+        label = label[0].upper() + label[1:]
+        rep = self._single("device.set_reminder", {"at_iso": at.isoformat(), "label": label}, ctx,
+                           f"I'll remind you to {_lower1(label)} {fmt_time(at, ctx.now)}.")
+        if re.search(r"\b(every|each|daily|weekly|every day|weekdays)\b", ctx.original or "", re.I) and rep.outcomes and rep.outcomes[0].status == "done":
+            rep.text += " I can't repeat reminders yet, so this is for the next one only."
+        return rep
 
     def _call_me(self, rest: str, ctx: TurnContext) -> AgentReply:
         what, conn = None, "about"

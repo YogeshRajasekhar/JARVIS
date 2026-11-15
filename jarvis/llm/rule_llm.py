@@ -24,6 +24,8 @@ PART_RX = r"(?:morning|afternoon|evening|night)"
 WHEN_RX = re.compile(
     rf"\b((?:{DAY_RX})(?:\s+{PART_RX})?(?:\s+{TIME_RX})?|{TIME_RX}(?:\s+{DAY_RX})?(?:\s+{PART_RX})?|in \d+ (?:minutes?|hours?|days?))\b",
     re.I)
+from jarvis.router_rules import STEP_VERBS  # noqa: E402
+
 NAME_RX = r"(?:Prof\.?\s+|Dr\.?\s+)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?"
 STOP_NAMES = {"I", "Me", "My", "The", "A", "An", "Tomorrow", "Today", "Monday", "Tuesday", "Wednesday", "Thursday",
               "Friday", "Saturday", "Sunday", "Remind", "Remember", "Set", "Schedule", "Book", "Email", "Mail", "Send",
@@ -102,7 +104,7 @@ class RuleLLM:
     def _t_split(self, prompt, system):
         text = _request(prompt)
         parts = re.split(r"\s*(?:;|,?\s+and then\s+|,?\s+then\s+|,?\s+and also\s+|,?\s+after that\s+|"
-                         r",?\s+and\s+(?=(?:mail|email|text|message|tell|send|remind|set|book|schedule|turn|open|call|post)\b))\s*",
+                         rf",?\s+and\s+(?:also\s+)?(?:please\s+)?(?=(?:{STEP_VERBS})\b)|,?\s+and\s+(?:also\s+)?(?=(?:what|when|who|how|where|is|am|are|do|does|did|will|can)\b))\s*",
                          text, flags=re.I)
         parts = [p.strip(" ,.") for p in parts if p and p.strip(" ,.")]
         names = _names(text)

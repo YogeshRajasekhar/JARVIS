@@ -158,6 +158,19 @@ class WebAgent(BaseAgent):
             if r:
                 idx = max(0, min(6, (r.start.date() - ctx.now.date()).days))
         card = {"type": "weather", "place": name, "now": w["now"], "days": days[:5]}
+        if re.search(r"\b(umbrella|rain(?:ing|y)?|raincoat|shower)\b", ctx.original or "", re.I) and days and day not in ("this week", "next week", "weekend", "this weekend"):
+            d = days[min(idx, len(days) - 1)]
+            chance = d.get("rain_chance")
+            label = "today" if idx == 0 else "tomorrow" if idx == 1 else "on " + (ctx.now + timedelta(days=idx)).strftime("%A")
+            if chance is None:
+                verdict = f"I can't tell the chance of rain {label}; it looks {d['summary']}."
+            elif chance >= 50:
+                verdict = f"Yes, take an umbrella. {chance}% chance of rain {label} in {name}."
+            elif chance >= 25:
+                verdict = f"Maybe. There's a {chance}% chance of rain {label} in {name}."
+            else:
+                verdict = f"No umbrella needed. Only a {chance}% chance of rain {label} in {name}."
+            return AgentReply(self.name, verdict, outs, cards=[card])
         if day in ("this week", "next week") and days:
             wet = [d for d in days if (d.get("rain_chance") or 0) >= 50]
             hi, lo = max(d["max"] for d in days), min(d["min"] for d in days)
@@ -305,7 +318,11 @@ def parse_apps(text: str) -> Optional[dict]:
         return {"action": "volume", "control": "up"}
     if re.match(r"^(?:turn )?(?:the )?volume down|^(?:decrease|lower|reduce|turn down|quieter)(?: the)?(?: volume)?$|^(?:make it |a bit )?(?:quieter|softer)$|^turn it down$", low):
         return {"action": "volume", "control": "down"}
-    if re.match(r"^(?:max(?:imum)?|full) volume$|^volume (?:to )?(?:max|full)$", low):
+    if re.match(r"^(?:it'?s|that'?s|this is|too|way too)?\s*(?:too |very |so )?loud\b|^not so loud$", low):
+        return {"action": "volume", "control": "down"}
+    if re.match(r"^(?:it'?s|that'?s|this is|too|i can'?t hear)\s*(?:too |very |so )?(?:quiet|soft|low)\b|^i can'?t hear(?: it| you| anything)?$|^speak up$", low):
+        return {"action": "volume", "control": "up"}
+    if re.match(r"^(?:max(?:imum)?|full) volume$|^volume (?:to )?(?:max|full)$|^(?:turn|put|crank)(?: the)? volume (?:all the way|fully|right) up$|^turn it all the way up$", low):
         return {"action": "volume", "control": "max"}
     if re.match(r"^(?:mute|silence)(?: the)?(?: phone| volume| sound| music| it)?$", low):
         return {"action": "volume", "control": "mute"}
@@ -342,6 +359,11 @@ def parse_apps(text: str) -> Optional[dict]:
         or re.match(r"^(?P<app>youtube|spotify) (?P<q>.+)$", low)
     if m:
         return {"action": "play", "query": t[m.start("q"):m.end("q")].strip(), "app": PLAY_APPS[m.group("app")]}
+    m = re.match(r"^(?:open|launch|start) (?P<app>youtube music|yt music|youtube|yt|spotify) and (?:play|search(?: for)?|find|put on)(?: some| a| the)? (?P<q>.+)$", low)
+    if m:
+        return {"action": "play", "query": t[m.start("q"):m.end("q")].strip(), "app": PLAY_APPS[m.group("app")]}
+    if re.match(r"^(?:play|put on|start)(?: me)?(?: some| a| the| my)? (?:music|songs?|tunes|playlist)$", low):
+        return {"action": "media", "control": "play"}
     m = re.match(r"^(?:play|put on|listen to)(?: me)?(?: some| a| the)? (?P<q>.+)$", low)
     if m and not re.match(r"^(?:music|song|video|it|playback)$", m.group("q")):
         video = bool(re.search(r"\b(video|trailer|episode|lecture|tutorial|movie|clip|highlights|vlog|podcast)\b", m.group("q")))
@@ -377,7 +399,7 @@ class AppsAgent(BaseAgent):
         if a == "media":
             ctl = cmd.get("control") or "play"
             out = self.propose("device.media", {"control": ctl}, ctx)
-            word = {"play": "Resuming.", "pause": "Paused.", "next": "Skipping.", "previous": "Going back.", "stop": "Stopped."}.get(ctl, "Done.")
+            word = {"play": "Playing.", "pause": "Paused.", "next": "Skipping.", "previous": "Going back.", "stop": "Stopped."}.get(ctl, "Done.")
             return AgentReply(self.name, self._said(out, word), [out])
         if a == "play":
             return self._play(cmd, ctx)
@@ -452,7 +474,11 @@ class AppsAgent(BaseAgent):
         who = cmd.get("contact") or ctx.focus.get("last_person")
         if not who:
             return AgentReply(self.name, "Who should I message on WhatsApp?", clarify="contact")
-        c, perm = self.svc.lookup_contact(who, self.name, resume=ctx.original or None, need="phone")
+        raw = re.sub(r"[\s()+-]", "", who)
+        if raw.isdigit() and 10 <= len(raw) <= 15:                     # a number said outright: no contact lookup needed
+            c, perm = {"name": "+" + (raw if len(raw) > 10 else (self.svc.db.kv_get("country_code") or "91") + raw), "phone": raw}, None
+        else:
+            c, perm = self.svc.lookup_contact(who, self.name, resume=ctx.original or None, need="phone")
         if perm is not None:
             return AgentReply(self.name, self.say_outcome(perm), [perm])
         if not c or not c.get("phone"):

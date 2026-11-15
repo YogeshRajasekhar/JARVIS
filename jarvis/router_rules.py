@@ -18,6 +18,7 @@ RULES: dict[str, list[tuple[str, float]]] = {
         (r"\b(phone number|contact details|contact)\b", 1.5), (r"\bturn (on|off)\b", 1),
     ],
     "scheduler": [
+        (r"\bslot\b", 3),
         (r"\b(calendar|schedule|meeting|meetings|event|appointment|standup|book|reschedule|postpone|push|move)\b", 2),
         (r"\b(free|available|availability|busy)\b", 1.5), (r"\b(cancel)\b", 1.5),
         (r"\bwhat('s| is| do i have)? (on|planned|happening)\b", 1.5), (r"\bset up a (call|meeting)\b", 2.5),
@@ -69,8 +70,9 @@ RULES: dict[str, list[tuple[str, float]]] = {
 _COMPILED = {a: [(re.compile(p, re.I), w) for p, w in rules] for a, rules in RULES.items()}
 
 # Words that link two actions. Used to decide whether to call the splitter at all.
-STRONG_LINK = re.compile(r";|\band then\b|\band (?:also )?(?:mail|email|text|message|tell|send|remind|set|book|schedule|"
-                         r"turn|open|call|post|cancel|move|add|create|check|find|play|start)\b", re.I)
+STEP_VERBS = "mail|email|text|message|tell|send|remind|set|book|schedule|turn|open|call|post|cancel|move|add|create|check|find|play|start|log|note|navigate|whatsapp|show|give|read|brief|mute|pause|search|wake|put|take"
+# "... and <verb> ..." or "... and what's ..." joins two separate requests.
+STRONG_LINK = re.compile(rf";|\band then\b|\band (?:also )?(?:please )?(?:{STEP_VERBS})\b|,? and (?:also )?(?:what(?:'s| is| are)?|when|who(?:'s| is)?|how|where|is|am|are|do|does|did|will|can)\b(?! (?:not|so)\b)", re.I)
 WEAK_LINK = re.compile(r"\b(then|after that|also)\b", re.I)
 
 
@@ -99,6 +101,8 @@ def score(text: str) -> dict[str, float]:
         out[agent] = out.get(agent, 0) + w
     if re.search(r"\b(next|upcoming) (meeting|event|call|appointment)\b|\b(free|open) slot\b|\bfree time\b|^what(?:'s| is) next\b|\bwhat do i have next\b", t):
         out["scheduler"] = out.get("scheduler", 0) + 4   # "how long until my next meeting" is calendar, not travel
+    if re.search(r"^add [\w' -]{2,40}$", t) and "to" not in t.split():
+        out["lists"] = out.get("lists", 0) + 3         # "add eggs": goes on the list you were just using
     if "apps" in out and re.search(r"^(open|launch|start) (the )?\w+( app)?$", t) and not re.search(r"\.\w{2,}", t):
         out["device"] = out.get("device", 0) + 3         # "open whatsapp" opens the app itself
     return {k: v for k, v in out.items() if v > 0}

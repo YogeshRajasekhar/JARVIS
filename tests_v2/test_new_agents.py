@@ -109,7 +109,8 @@ def test_routine_create_run_delete(b):
 # ------------------------------------------------------------------ web
 def test_web_weather_news_facts_currency(b):
     r = say(b, "will it rain tomorrow")
-    assert "Tomorrow" in r.reply and "umbrella" in r.reply and r.cards[0]["type"] == "weather"
+    assert "tomorrow" in r.reply and "take an umbrella" in r.reply and r.cards[0]["type"] == "weather"
+    assert "No umbrella needed" in say(b, "do i need an umbrella").reply
     assert "Darmstadt" in say(b, "weather in Darmstadt this weekend").reply
     r = say(b, "any cricket news today")
     assert "cricket" in r.reply and r.cards[0]["type"] == "links"
@@ -224,3 +225,31 @@ def test_glance_tiles(tmp_path):
     tiles = {t["id"]: t for t in c.get("/api/glance", headers=H).json()["tiles"]}
     assert tiles["tasks"]["value"] == "1" and tiles["money"]["value"].endswith("120")
     assert c.get("/api/glance").status_code == 401
+
+
+def test_round_two_phrasings(b):
+    r = say(b, "what's the weather and what's on my calendar today")
+    assert r.agents == ["web", "scheduler"]
+    r = say(b, "I spent 300 on dinner and add call mom to my tasks")
+    assert r.agents == ["money", "lists"] and b.svc.lists.items("todo")[0]["text"] == "call mom"
+    assert "remind you to go shopping" in say(b, "remind me at 6pm to go shopping").reply
+    r = say(b, "remind me every day at 9 to take vitamins")
+    assert "to take vitamins" in r.reply and "can't repeat" in r.reply
+    assert "Clock app" in say(b, "delete my alarm").reply
+    assert "never store passwords" in say(b, "what's my password").reply
+    assert "days until 25 December" in say(b, "how many days until 25 december").reply
+    say(b, "todo: review PR 42")
+    assert "Ticked off review PR 42" in say(b, "i finished review PR 42").reply      # on a list, so not a GitHub question
+    assert "₹2,000 for rent" in say(b, "i paid 2000 rent").reply
+    assert "biggest expense" in say(b, "what's my biggest expense this month").reply
+    assert say(b, "open spotify and play jazz").agents == ["apps"] and "spotify.com/search/jazz" in b.svc.device.urls[-1]
+    assert "maximum" in say(b, "turn the volume all the way up").reply
+    assert "5 minutes timer" in say(b, "set a timer for 5 minutes set a timer for 5 minutes set a timer for 5 minutes").reply
+
+
+def test_shorthand_and_day_of_month(b):
+    from jarvis.core.timeparse import resolve
+    assert "tomorrow" in say(b, "schedule a meeting with Arun tmrw at 5").reply
+    r = resolve("the 20th at 5pm", NOW9)
+    assert (r.start.day, r.start.hour) == (20, 17)
+    assert resolve("on the 1st", NOW9).start.month == 12

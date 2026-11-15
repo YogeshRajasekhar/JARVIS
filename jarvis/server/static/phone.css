@@ -118,6 +118,12 @@ button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
   .stage { height: 262px; } #orb { width: 214px; height: 214px; }
 }
 
+/* once a conversation is going, the reactor shrinks to give it room */
+.stage, #orb { transition: height .35s ease, width .35s ease; }
+#main.talking:not(.compact) .stage { height: 232px; }
+#main.talking:not(.compact) #orb { width: 180px; height: 180px; }
+@media (prefers-reduced-motion: reduce) { .stage, #orb { transition: none; } }
+
 /* ---------- glance tiles ---------- */
 .tiles { flex: none; display: flex; gap: 8px; padding: 2px 14px 6px; overflow-x: auto; scrollbar-width: none; }
 .tiles::-webkit-scrollbar { display: none; }

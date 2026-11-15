@@ -350,3 +350,27 @@ def test_settings_add_model_provider(page, server, monkeypatch):
     pg.screenshot(path=os.path.join(ART, "7_settings.png"), full_page=True)
     assert pg.errors == [], pg.errors
     pg.click("#tabs button[data-view=main]")
+
+
+def test_new_cards_and_home_tiles(page, server):
+    """Lists and spending show as cards, the home tiles update, and tapping a list item ticks it off."""
+    pg = page
+    pg.reload()
+    pg.wait_for_selector("#state:has-text('Ready')", timeout=10000)
+    pg.evaluate("window.__jarvis.speakOff()")
+    assert pg.locator("#chips .chip").count() == 4                      # suggestions on a fresh screen
+    pg.evaluate("window.__jarvis.send('add milk, eggs and bread to my shopping list')")
+    pg.wait_for_selector(".card.list .tick", timeout=8000)
+    assert pg.is_hidden("#chips")                                       # they step aside once you start
+    pg.evaluate("window.__jarvis.send('I spent 250 rupees on lunch')")
+    pg.wait_for_selector(".card.money", timeout=8000)
+    pg.wait_for_selector("#tiles .tile[data-id=shop]", timeout=8000)
+    assert pg.inner_text("#tiles .tile[data-id=shop] .tv") == "3"
+    assert "250" in pg.inner_text("#tiles .tile[data-id=money] .tv")
+    pg.locator(".card.list .tick:has-text('eggs')").last.click()
+    pg.wait_for_selector("#log li.jarvis:has-text('Ticked off eggs')", timeout=8000)
+    pg.evaluate("window.__jarvis.send('what time is it')")
+    pg.wait_for_selector("#log li.jarvis:has-text(\"It's\")", timeout=8000)
+    pg.wait_for_timeout(500)
+    pg.screenshot(path=os.path.join(ART, "10_cards.png"))
+    assert pg.errors == [], pg.errors

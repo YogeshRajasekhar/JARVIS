@@ -304,6 +304,29 @@ class BriefingAgent(BaseAgent):
             o = self.propose("github.read", {"op": "notifications", "repo": None}, ctx)
             if o.ok and o.data["result"]:
                 parts.append(f"{len(o.data['result'])} GitHub notification{'s' if len(o.data['result']) != 1 else ''}.")
+        # to-dos: what's overdue or due today
+        over, today = self.svc.lists.overdue(now), self.svc.lists.due_between(now, now.replace(hour=23, minute=59, second=59))
+        if over:
+            parts.append(f"{len(over)} task{'s are' if len(over) != 1 else ' is'} overdue, starting with {over[0]['text']}.")
+        if today:
+            parts.append(f"Due today: {', '.join(r['text'] for r in today[:3])}.")
+        # weather, only when the web and location are already allowed (a briefing never raises new prompts)
+        if granted("web") and (self.svc.db.kv_get("home_city") or granted("location.read")):
+            try:
+                place, lat, lon = self.svc.db.kv_get("home_city"), None, None
+                if not place:
+                    loc = self.propose("device.location", {}, ctx)
+                    if loc.ok and loc.data.get("lat") is not None:
+                        lat, lon, place = loc.data["lat"], loc.data["lon"], loc.data.get("name")
+                if place or lat is not None:
+                    w = self.propose("web.weather", {"place": place, "lat": lat, "lon": lon}, ctx)
+                    if w.ok and w.data.get("days"):
+                        d0 = w.data["days"][0]
+                        rain = d0.get("rain_chance") or 0
+                        parts.append(f"Outside it's {w.data['now']['temp']}° and {w.data['now']['summary']}, high of {d0['max']}°" +
+                                     (f", with rain likely ({rain}%). Take an umbrella." if rain >= 50 else "."))
+            except Exception:
+                pass
         commitments = self.svc.graph.by_type("commitment")
         if commitments:
             c = commitments[0]

@@ -39,7 +39,9 @@ WMO = {0: "clear", 1: "mostly clear", 2: "partly cloudy", 3: "overcast", 45: "fo
 
 def clean(text: str, limit: int = 400) -> str:
     """HTML/markup -> one line of plain text, capped. Applied to everything fetched from the web."""
-    t = re.sub(r"<[^>]+>", " ", text or "")
+    t = re.sub(r"</?(?:b|i|em|strong|span|mark|u)\b[^>]*>", "", text or "", flags=re.I)     # inline tags sit inside words
+    t = re.sub(r"<(script|style)\b.*?</\1>", " ", t, flags=re.I | re.S)
+    t = re.sub(r"<[^>]+>", " ", t)
     t = html.unescape(t)
     t = re.sub(r"[\x00-\x1f\x7f]", " ", t)
     t = re.sub(r"\s+", " ", t).strip()

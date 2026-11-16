@@ -1610,3 +1610,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-16
 
 **Advice of the day:** One of the top five regrets people have is that they didn't have the courage to be their true self.
+
+## 2026-11-16
+
+**Fact of the day:** Since 1978, 37 people have died by Vending Machine`s falling on them.  13 people are killed annually.  All this while trying to shake merchandise out of them. 113 people have been injured.

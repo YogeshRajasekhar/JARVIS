@@ -1626,3 +1626,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-17
 
 **Word of the day:** *dichotomized* (verb) — To separate into two parts or classifications.
+
+## 2026-11-17
+
+**Advice of the day:** Mercy is the better part of justice.

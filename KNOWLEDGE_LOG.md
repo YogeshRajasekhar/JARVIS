@@ -1634,3 +1634,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-17
 
 **Word of the day:** *addresses* (noun) — Direction.
+
+## 2026-11-17
+
+**Word of the day:** *marrons* (noun) — A sweet chestnut.

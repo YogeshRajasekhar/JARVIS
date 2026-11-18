@@ -1654,3 +1654,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-18
 
 **Fact of the day:** Montpelier, Vermont is the only state capital without a McDonalds.
+
+## 2026-11-18
+
+**Word of the day:** *nasopharynges* (noun) — The nasal part of the pharynx, lying behind the nose and above the level of the soft palate.

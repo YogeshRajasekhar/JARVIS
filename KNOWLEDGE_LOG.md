@@ -1642,3 +1642,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-17
 
 **Fact of the day:** 101 Dalmatians, Peter Pan, Lady and the Tramp, and Mulan are the only Disney cartoons where both parents are present and don`t die throughout the movie.
+
+## 2026-11-18
+
+**Advice of the day:** Try buying a coffee for the creator of a free public API, now and then.

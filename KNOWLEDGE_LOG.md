@@ -1658,3 +1658,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-18
 
 **Word of the day:** *nasopharynges* (noun) — The nasal part of the pharynx, lying behind the nose and above the level of the soft palate.
+
+## 2026-11-18
+
+**Fact of the day:** This common everyday occurrence composed of 59% nitrogen, 21% hydrogen, and 9% dioxide is called a `fart`.

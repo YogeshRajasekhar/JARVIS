@@ -1678,3 +1678,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-19
 
 **Advice of the day:** You never really grow up.
+
+## 2026-11-19
+
+**Fact of the day:** Months that begin on a Sunday will always have a `Friday the 13th`.

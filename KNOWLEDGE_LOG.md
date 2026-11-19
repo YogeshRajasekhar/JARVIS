@@ -1666,3 +1666,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-19
 
 **Advice of the day:** If it ain't broke don't fix it.
+
+## 2026-11-19
+
+**Word of the day:** *clinician* (noun) — A healthcare provider working in a clinic or hospital.

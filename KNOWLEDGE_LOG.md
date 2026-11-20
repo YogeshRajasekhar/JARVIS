@@ -1690,3 +1690,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-20
 
 **Fact of the day:** Jefferson invented the dumbwaiter, the monetary system, and the folding attic ladder.
+
+## 2026-11-20
+
+**Fact of the day:** The ZIP in “ZIP code” means Zoning Improvement Plan.

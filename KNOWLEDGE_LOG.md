@@ -1702,3 +1702,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-20
 
 **Fact of the day:** About 500 movies are made in the US and 800 in India annually.
+
+## 2026-11-21
+
+**Word of the day:** *shifting* (verb) — (sometimes figurative) To move from one place to another; to redistribute.

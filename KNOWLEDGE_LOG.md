@@ -1714,3 +1714,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-21
 
 **Word of the day:** *transpersonal* (adjective) — That transcends the personal or individual
+
+## 2026-11-21
+
+**Advice of the day:** Try buying a coffee for the creator of a free public API, now and then.

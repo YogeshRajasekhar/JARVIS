@@ -1718,3 +1718,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-21
 
 **Advice of the day:** Try buying a coffee for the creator of a free public API, now and then.
+
+## 2026-11-21
+
+**Word of the day:** *mopeds* (noun) — A lightweight, two-wheeled vehicle equipped with a small motor and pedals, designed to go no faster than some specified speed limit.

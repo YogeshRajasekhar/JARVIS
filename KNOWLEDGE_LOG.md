@@ -1706,3 +1706,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-21
 
 **Word of the day:** *shifting* (verb) — (sometimes figurative) To move from one place to another; to redistribute.
+
+## 2026-11-21
+
+**Advice of the day:** If you're going bald, don't comb your hair over your bald patch.

@@ -1722,3 +1722,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-21
 
 **Word of the day:** *mopeds* (noun) — A lightweight, two-wheeled vehicle equipped with a small motor and pedals, designed to go no faster than some specified speed limit.
+
+## 2026-11-22
+
+**Fact of the day:** Until 1994, world maps and globes sold in Albania only had Albania on them.

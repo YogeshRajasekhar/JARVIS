@@ -1726,3 +1726,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-22
 
 **Fact of the day:** Until 1994, world maps and globes sold in Albania only had Albania on them.
+
+## 2026-11-22
+
+**Word of the day:** *unthreatening* (adjective) — Not threatening

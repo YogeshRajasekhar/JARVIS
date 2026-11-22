@@ -1734,3 +1734,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-22
 
 **Advice of the day:** No one knows anyone else in the way you do.
+
+## 2026-11-22
+
+**Word of the day:** *thigmotaxis* (noun) — The movement of an organism either towards or away from the stimulus of physical contact.

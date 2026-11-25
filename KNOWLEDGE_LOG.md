@@ -1782,3 +1782,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-25
 
 **Fact of the day:** The Great Wall of China is the only man-made structure visible from space.
+
+## 2026-11-25
+
+**Word of the day:** *excellency* (noun) — The quality of being excellent.

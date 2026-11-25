@@ -1794,3 +1794,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-25
 
 **Word of the day:** *zonations* (noun) — An arrangement or distribution of things into zones.
+
+## 2026-11-25
+
+**Fact of the day:** In the 1980`s American migraines increased by 60%.

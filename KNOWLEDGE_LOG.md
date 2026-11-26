@@ -1806,3 +1806,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-26
 
 **Fact of the day:** A “quidnunc” is a person who is eager to know the latest news and gossip.
+
+## 2026-11-26
+
+**Word of the day:** *grumbled* (verb) — To make a low, growling or rumbling noise, like a hungry stomach or certain animals.

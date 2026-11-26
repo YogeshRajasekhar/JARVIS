@@ -1814,3 +1814,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-26
 
 **Fact of the day:** A Boeing 747`s wingspan is longer than the Wright brother`s first flight.
+
+## 2026-11-26
+
+**Fact of the day:** The first McDonald's restaurant in Canada was in Richmond, British Columbia.

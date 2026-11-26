@@ -1802,3 +1802,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-25
 
 **Fact of the day:** There are 1,792 steps in the Eiffel Tower
+
+## 2026-11-26
+
+**Fact of the day:** A “quidnunc” is a person who is eager to know the latest news and gossip.

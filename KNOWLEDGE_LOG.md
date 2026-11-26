@@ -1818,3 +1818,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-26
 
 **Fact of the day:** The first McDonald's restaurant in Canada was in Richmond, British Columbia.
+
+## 2026-11-26
+
+**Advice of the day:** Do not check work email on your days off.

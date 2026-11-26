@@ -1810,3 +1810,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-26
 
 **Word of the day:** *grumbled* (verb) — To make a low, growling or rumbling noise, like a hungry stomach or certain animals.
+
+## 2026-11-26
+
+**Fact of the day:** A Boeing 747`s wingspan is longer than the Wright brother`s first flight.

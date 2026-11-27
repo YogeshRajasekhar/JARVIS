@@ -1822,3 +1822,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-26
 
 **Advice of the day:** Do not check work email on your days off.
+
+## 2026-11-27
+
+**Advice of the day:** Rule number 1: Try not to die. Rule number 2: Don't be a dick.

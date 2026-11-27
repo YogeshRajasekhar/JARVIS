@@ -1838,3 +1838,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-27
 
 **Word of the day:** *simple* (noun) — A herbal preparation made from one plant, as opposed to something made from more than one plant.
+
+## 2026-11-27
+
+**Word of the day:** *scar* (noun) — A permanent mark on the skin, sometimes caused by the healing of a wound.

@@ -1826,3 +1826,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-27
 
 **Advice of the day:** Rule number 1: Try not to die. Rule number 2: Don't be a dick.
+
+## 2026-11-27
+
+**Word of the day:** *belvedere* (noun) — A turret or other raised structure offering a pleasant view of the surrounding area.

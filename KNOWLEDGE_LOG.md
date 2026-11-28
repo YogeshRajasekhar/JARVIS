@@ -1842,3 +1842,7 @@ A running log of daily facts, quotes, and words, auto-posted by GitHub Actions.
 ## 2026-11-27
 
 **Word of the day:** *scar* (noun) — A permanent mark on the skin, sometimes caused by the healing of a wound.
+
+## 2026-11-28
+
+**Advice of the day:** Mercy is the better part of justice.
